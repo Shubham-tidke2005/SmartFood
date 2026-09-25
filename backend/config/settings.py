@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -25,7 +26,6 @@ ALLOWED_HOSTS = env.list(
 
 
 INSTALLED_APPS = [
-    # Django applications
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -33,11 +33,10 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-    # Third-party applications
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
 
-    # SmartFood applications
     "apps.accounts.apps.AccountsConfig",
     "apps.donations.apps.DonationsConfig",
     "apps.receivers.apps.ReceiversConfig",
@@ -82,6 +81,19 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
+
+
+EMAIL_BACKEND = env(
+    "EMAIL_BACKEND",
+    default="django.core.mail.backends.console.EmailBackend",
+)
+
+DEFAULT_FROM_EMAIL = "SmartFood <noreply@smartfood.local>"
+
+FRONTEND_URL = env(
+    "FRONTEND_URL",
+    default="http://127.0.0.1:5173",
+)
 
 # PostgreSQL
 DATABASES = {
@@ -164,11 +176,36 @@ CSRF_TRUSTED_ORIGINS = [
 
 
 REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        (
+            "rest_framework_simplejwt.authentication."
+            "JWTAuthentication"
+        ),
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
         "rest_framework.renderers.BrowsableAPIRenderer",
     ],
 }
 
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+}
+
+JWT_REFRESH_COOKIE_NAME = "sf_refresh"
+JWT_REFRESH_COOKIE_PATH = "/api/auth/"
+JWT_REFRESH_COOKIE_SECURE = not DEBUG
+JWT_REFRESH_COOKIE_HTTP_ONLY = True
+JWT_REFRESH_COOKIE_SAMESITE = "Lax"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

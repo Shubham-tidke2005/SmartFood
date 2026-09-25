@@ -77,6 +77,7 @@ class Command(BaseCommand):
                     "verification_status": (
                         User.VerificationStatus.VERIFIED
                     ),
+                    "contact_verified_at": timezone.now(),
                     "is_active": True,
                     "is_staff": account["is_staff"],
                     "is_superuser": account["is_superuser"],
