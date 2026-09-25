@@ -1,0 +1,57 @@
+# Python virtual environment
+backend/venv/
+venv/
+.venv/
+
+# Python generated files
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Django environment and local files
+backend/.env
+*.sqlite3
+backend/staticfiles/
+
+# Uploaded and private files
+backend/media/
+backend/private/
+storage/
+uploads/
+verification_documents/
+
+# React
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/coverage/
+
+# Machine learning datasets and models
+ml/data/
+ml/models/
+ml/artifacts/
+ml/**/*.csv
+ml/**/*.xlsx
+ml/**/*.pkl
+ml/**/*.pickle
+ml/**/*.joblib
+ml/**/.ipynb_checkpoints/
+
+# PostgreSQL backups
+*.sql
+*.dump
+backups/
+
+# Logs
+*.log
+logs/
+
+# Operating system and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
