@@ -30,6 +30,22 @@ class Notification(models.Model):
             "DONATION_CANCELLED",
             "Donation cancelled",
         )
+        HANDOVER_CONFIRMED = (
+            "HANDOVER_CONFIRMED",
+            "Handover confirmed",
+        )
+        DELIVERY_RECORDED = (
+            "DELIVERY_RECORDED",
+            "Delivery recorded",
+        )
+        RECEIPT_CONFIRMED = (
+            "RECEIPT_CONFIRMED",
+            "Receipt confirmed",
+        )
+        RECEIPT_REJECTED = (
+            "RECEIPT_REJECTED",
+            "Receipt rejected",
+        )
 
     id = models.UUIDField(
         primary_key=True,

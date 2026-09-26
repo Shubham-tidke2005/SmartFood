@@ -1,0 +1,121 @@
+from django.urls import path
+
+from .views import (
+    DirectDeliveryRecordView,
+    DirectFulfilmentDetailView,
+    HandoverConfirmView,
+    ReceiptConfirmView,
+)
+from .volunteer_views import (
+    EligibleVolunteerTaskListView,
+    MyVolunteerTaskListView,
+    VolunteerAvailabilityListCreateView,
+    VolunteerCancelAssignmentView,
+    VolunteerCapacityListCreateView,
+    VolunteerDeliveryView,
+    VolunteerFailureReportView,
+    VolunteerPickupView,
+    VolunteerProfileView,
+    VolunteerReceiptConfirmView,
+    VolunteerTaskAcceptView,
+    VolunteerTaskStatusView,
+)
+
+
+app_name = "logistics"
+
+
+urlpatterns = [
+    path(
+        "donations/<uuid:donation_id>/",
+        DirectFulfilmentDetailView.as_view(),
+        name="direct-fulfilment-detail",
+    ),
+    path(
+        "donations/<uuid:donation_id>/handover/",
+        HandoverConfirmView.as_view(),
+        name="handover-confirm",
+    ),
+    path(
+        "donations/<uuid:donation_id>/delivery/",
+        DirectDeliveryRecordView.as_view(),
+        name="delivery-record",
+    ),
+    path(
+        "donations/<uuid:donation_id>/receipt/",
+        ReceiptConfirmView.as_view(),
+        name="receipt-confirm",
+    ),
+    path(
+        "volunteer/profile/",
+        VolunteerProfileView.as_view(),
+        name="volunteer-profile",
+    ),
+    path(
+        "volunteer/capacities/",
+        VolunteerCapacityListCreateView.as_view(),
+        name="volunteer-capacities",
+    ),
+    path(
+        "volunteer/availability/",
+        VolunteerAvailabilityListCreateView.as_view(),
+        name="volunteer-availability",
+    ),
+    path(
+        "volunteer/tasks/eligible/",
+        EligibleVolunteerTaskListView.as_view(),
+        name="eligible-tasks",
+    ),
+    path(
+        "volunteer/tasks/mine/",
+        MyVolunteerTaskListView.as_view(),
+        name="my-tasks",
+    ),
+    path(
+        "volunteer/tasks/<uuid:task_id>/accept/",
+        VolunteerTaskAcceptView.as_view(),
+        name="task-accept",
+    ),
+    path(
+        (
+            "volunteer/tasks/<uuid:task_id>/"
+            "<str:action>/"
+        ),
+        VolunteerTaskStatusView.as_view(),
+        name="task-status",
+    ),
+    path(
+        "volunteer/tasks/<uuid:task_id>/pickup/",
+        VolunteerPickupView.as_view(),
+        name="task-pickup",
+    ),
+    path(
+        "volunteer/tasks/<uuid:task_id>/delivery/",
+        VolunteerDeliveryView.as_view(),
+        name="task-delivery",
+    ),
+    path(
+        (
+            "volunteer/tasks/<uuid:task_id>/"
+            "confirm-receipt/"
+        ),
+        VolunteerReceiptConfirmView.as_view(),
+        name="task-receipt",
+    ),
+    path(
+        (
+            "volunteer/tasks/<uuid:task_id>/"
+            "cancel-assignment/"
+        ),
+        VolunteerCancelAssignmentView.as_view(),
+        name="assignment-cancel",
+    ),
+    path(
+        (
+            "volunteer/tasks/<uuid:task_id>/"
+            "report-failure/"
+        ),
+        VolunteerFailureReportView.as_view(),
+        name="task-failure",
+    ),
+]

@@ -93,6 +93,7 @@ class DonationRequestReadSerializer(
             "unit",
             "status",
             "proposed_mode",
+            "pickup_deadline",
             "expires_at",
             "decided_at",
             "reason",
