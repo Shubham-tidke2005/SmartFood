@@ -1,17 +1,20 @@
 import {
   BarChart3,
   Bell,
+  CircleHelp,
   ClipboardCheck,
   HandHeart,
+  History,
   LayoutDashboard,
   Package,
+  PackagePlus,
   Settings,
   ShieldCheck,
   Truck,
   Users,
 } from "lucide-react";
 
-const commonItems = [
+const sharedItems = [
   {
     label: "Dashboard",
     path: "/dashboard",
@@ -27,41 +30,46 @@ const commonItems = [
     path: "/profile",
     icon: Settings,
   },
+  {
+    label: "Help",
+    path: "/help",
+    icon: CircleHelp,
+  },
 ];
 
 const roleItems = {
   DONOR: [
     {
-      label: "My donations",
-      path: "/donations",
-      icon: Package,
+      label: "Create donation",
+      path: "/donor/donations/new",
+      icon: PackagePlus,
     },
     {
-      label: "Receiver requests",
-      path: "/requests",
+      label: "Requests",
+      path: "/donor/requests",
       icon: HandHeart,
     },
     {
-      label: "Impact",
-      path: "/analytics",
-      icon: BarChart3,
+      label: "History",
+      path: "/donor/history",
+      icon: History,
     },
   ],
 
   RECEIVER: [
     {
-      label: "Discover food",
-      path: "/discover",
+      label: "Browse donations",
+      path: "/receiver/donations",
       icon: Package,
     },
     {
-      label: "My requests",
-      path: "/requests",
+      label: "Requirements",
+      path: "/receiver/requirements",
       icon: ClipboardCheck,
     },
     {
-      label: "Food received",
-      path: "/received",
+      label: "My requests",
+      path: "/receiver/requests",
       icon: HandHeart,
     },
   ],
@@ -73,36 +81,36 @@ const roleItems = {
       icon: Truck,
     },
     {
-      label: "My deliveries",
-      path: "/volunteer/deliveries",
-      icon: ClipboardCheck,
-    },
-    {
-      label: "Impact",
-      path: "/analytics",
-      icon: BarChart3,
+      label: "Task history",
+      path: "/volunteer/history",
+      icon: History,
     },
   ],
 
   ADMIN: [
-    {
-      label: "Participants",
-      path: "/admin/participants",
-      icon: Users,
-    },
     {
       label: "Verifications",
       path: "/admin/verifications",
       icon: ShieldCheck,
     },
     {
-      label: "Operations",
-      path: "/admin/operations",
-      icon: Truck,
+      label: "Users",
+      path: "/admin/users",
+      icon: Users,
+    },
+    {
+      label: "Donations",
+      path: "/admin/donations",
+      icon: Package,
+    },
+    {
+      label: "Complaints",
+      path: "/admin/complaints",
+      icon: CircleHelp,
     },
     {
       label: "Analytics",
-      path: "/analytics",
+      path: "/admin/analytics",
       icon: BarChart3,
     },
   ],
@@ -113,8 +121,8 @@ export function getNavigationForRole(role) {
     role?.toUpperCase();
 
   return [
-    commonItems[0],
+    sharedItems[0],
     ...(roleItems[normalizedRole] || []),
-    ...commonItems.slice(1),
+    ...sharedItems.slice(1),
   ];
 }

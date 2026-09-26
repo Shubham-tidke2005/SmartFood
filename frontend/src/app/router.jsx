@@ -8,22 +8,46 @@ import RoleRoute from "../auth/RoleRoute";
 import AppShell from "../components/layout/AppShell";
 
 import DashboardPage from "../pages/DashboardPage";
-import FeaturePlaceholderPage from "../pages/FeaturePlaceholderPage";
 import LoginPage from "../pages/LoginPage";
 import NotFoundPage from "../pages/NotFoundPage";
 import UnauthorizedPage from "../pages/UnauthorizedPage";
 
-function placeholder(
-  title,
-  description,
-) {
-  return (
-    <FeaturePlaceholderPage
-      title={title}
-      description={description}
-    />
-  );
-}
+import {
+  CreateDonationPage,
+  DonorDonationDetailPage,
+  DonorHistoryPage,
+  DonorRequestsPage,
+} from "../pages/donor/DonorPages";
+
+import {
+  BrowseDonationsPage,
+  ReceiptConfirmationPage,
+  ReceiverDonationDetailPage,
+  ReceiverRequestsPage,
+  ReceiverRequirementsPage,
+} from "../pages/receiver/ReceiverPages";
+
+import {
+  ActiveTaskPage,
+  AvailableTasksPage,
+  VolunteerTaskHistoryPage,
+} from "../pages/volunteer/VolunteerPages";
+
+import {
+  AdminAnalyticsPage,
+  AdminComplaintsPage,
+  AdminDonationsPage,
+  AdminUsersPage,
+  VerificationQueuePage,
+} from "../pages/admin/AdminPages";
+
+import {
+  HelpReportingPage,
+  NotificationsPage,
+  PasswordResetPage,
+  ProfilePage,
+  RegistrationPage,
+} from "../pages/shared/SharedPages";
 
 const router = createBrowserRouter([
   {
@@ -40,9 +64,18 @@ const router = createBrowserRouter([
     element: <LoginPage />,
   },
   {
+    path: "/register",
+    element: <RegistrationPage />,
+  },
+  {
+    path: "/password-reset",
+    element: <PasswordResetPage />,
+  },
+  {
     path: "/unauthorized",
     element: <UnauthorizedPage />,
   },
+
   {
     element: <ProtectedRoute />,
     children: [
@@ -54,25 +87,16 @@ const router = createBrowserRouter([
             element: <DashboardPage />,
           },
           {
-            path: "/notifications",
-            element: placeholder(
-              "Notifications",
-              "View reminders and workflow updates.",
-            ),
-          },
-          {
             path: "/profile",
-            element: placeholder(
-              "Profile",
-              "Manage your participant information.",
-            ),
+            element: <ProfilePage />,
           },
           {
-            path: "/analytics",
-            element: placeholder(
-              "Impact analytics",
-              "Review redistribution activity and impact.",
-            ),
+            path: "/notifications",
+            element: <NotificationsPage />,
+          },
+          {
+            path: "/help",
+            element: <HelpReportingPage />,
           },
 
           {
@@ -83,18 +107,20 @@ const router = createBrowserRouter([
             ),
             children: [
               {
-                path: "/donations",
-                element: placeholder(
-                  "My donations",
-                  "Create and manage food donations.",
-                ),
+                path: "/donor/donations/new",
+                element: <CreateDonationPage />,
               },
               {
-                path: "/requests",
-                element: placeholder(
-                  "Receiver requests",
-                  "Review incoming receiver requests.",
-                ),
+                path: "/donor/donations/:donationId",
+                element: <DonorDonationDetailPage />,
+              },
+              {
+                path: "/donor/requests",
+                element: <DonorRequestsPage />,
+              },
+              {
+                path: "/donor/history",
+                element: <DonorHistoryPage />,
               },
             ],
           },
@@ -107,25 +133,24 @@ const router = createBrowserRouter([
             ),
             children: [
               {
-                path: "/discover",
-                element: placeholder(
-                  "Discover donations",
-                  "Find compatible food donations.",
-                ),
+                path: "/receiver/donations",
+                element: <BrowseDonationsPage />,
               },
               {
-                path: "/requests",
-                element: placeholder(
-                  "My requests",
-                  "Track your donation requests.",
-                ),
+                path: "/receiver/donations/:donationId",
+                element: <ReceiverDonationDetailPage />,
               },
               {
-                path: "/received",
-                element: placeholder(
-                  "Food received",
-                  "Review completed receipts.",
-                ),
+                path: "/receiver/requirements",
+                element: <ReceiverRequirementsPage />,
+              },
+              {
+                path: "/receiver/requests",
+                element: <ReceiverRequestsPage />,
+              },
+              {
+                path: "/receiver/receipts/:donationId",
+                element: <ReceiptConfirmationPage />,
               },
             ],
           },
@@ -139,17 +164,15 @@ const router = createBrowserRouter([
             children: [
               {
                 path: "/volunteer/tasks",
-                element: placeholder(
-                  "Available tasks",
-                  "Find eligible transport tasks.",
-                ),
+                element: <AvailableTasksPage />,
               },
               {
-                path: "/volunteer/deliveries",
-                element: placeholder(
-                  "My deliveries",
-                  "Track accepted transport tasks.",
-                ),
+                path: "/volunteer/tasks/:taskId",
+                element: <ActiveTaskPage />,
+              },
+              {
+                path: "/volunteer/history",
+                element: <VolunteerTaskHistoryPage />,
               },
             ],
           },
@@ -162,25 +185,24 @@ const router = createBrowserRouter([
             ),
             children: [
               {
-                path: "/admin/participants",
-                element: placeholder(
-                  "Participants",
-                  "Manage SmartFood participants.",
-                ),
-              },
-              {
                 path: "/admin/verifications",
-                element: placeholder(
-                  "Verifications",
-                  "Review verification submissions.",
-                ),
+                element: <VerificationQueuePage />,
               },
               {
-                path: "/admin/operations",
-                element: placeholder(
-                  "Operations",
-                  "Review operational issues.",
-                ),
+                path: "/admin/users",
+                element: <AdminUsersPage />,
+              },
+              {
+                path: "/admin/donations",
+                element: <AdminDonationsPage />,
+              },
+              {
+                path: "/admin/complaints",
+                element: <AdminComplaintsPage />,
+              },
+              {
+                path: "/admin/analytics",
+                element: <AdminAnalyticsPage />,
               },
             ],
           },
@@ -188,6 +210,7 @@ const router = createBrowserRouter([
       },
     ],
   },
+
   {
     path: "*",
     element: <NotFoundPage />,
