@@ -7,7 +7,6 @@ import environ
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Environment variables
 env = environ.Env(
     DJANGO_DEBUG=(bool, False),
 )
@@ -17,11 +16,17 @@ environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 
-DEBUG = env.bool("DJANGO_DEBUG", default=False)
+DEBUG = env.bool(
+    "DJANGO_DEBUG",
+    default=False,
+)
 
 ALLOWED_HOSTS = env.list(
     "DJANGO_ALLOWED_HOSTS",
-    default=["127.0.0.1", "localhost"],
+    default=[
+        "127.0.0.1",
+        "localhost",
+    ],
 )
 
 
@@ -45,6 +50,7 @@ INSTALLED_APPS = [
     "apps.notifications.apps.NotificationsConfig",
     "apps.analytics.apps.AnalyticsConfig",
     "apps.moderation.apps.ModerationConfig",
+    "apps.operations.apps.OperationsConfig",
 ]
 
 
@@ -65,14 +71,26 @@ ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
     {
-        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "BACKEND": (
+            "django.template.backends.django."
+            "DjangoTemplates"
+        ),
         "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
-                "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
-                "django.contrib.messages.context_processors.messages",
+                (
+                    "django.template.context_processors."
+                    "request"
+                ),
+                (
+                    "django.contrib.auth.context_processors."
+                    "auth"
+                ),
+                (
+                    "django.contrib.messages.context_processors."
+                    "messages"
+                ),
             ],
         },
     },
@@ -82,28 +100,40 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 
-
 EMAIL_BACKEND = env(
     "EMAIL_BACKEND",
-    default="django.core.mail.backends.console.EmailBackend",
+    default=(
+        "django.core.mail.backends.console."
+        "EmailBackend"
+    ),
 )
 
-DEFAULT_FROM_EMAIL = "SmartFood <noreply@smartfood.local>"
+DEFAULT_FROM_EMAIL = (
+    "SmartFood <noreply@smartfood.local>"
+)
 
 FRONTEND_URL = env(
     "FRONTEND_URL",
     default="http://127.0.0.1:5173",
 )
 
-# PostgreSQL
+
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
+        "ENGINE": (
+            "django.db.backends.postgresql"
+        ),
         "NAME": env("DB_NAME"),
         "USER": env("DB_USER"),
         "PASSWORD": env("DB_PASSWORD"),
-        "HOST": env("DB_HOST", default="localhost"),
-        "PORT": env("DB_PORT", default="5432"),
+        "HOST": env(
+            "DB_HOST",
+            default="localhost",
+        ),
+        "PORT": env(
+            "DB_PORT",
+            default="5432",
+        ),
         "CONN_MAX_AGE": 60,
     }
 }
@@ -137,7 +167,6 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-# Custom user model
 AUTH_USER_MODEL = "accounts.User"
 
 
@@ -151,26 +180,33 @@ USE_TZ = True
 
 
 STATIC_URL = "static/"
+
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 
-# Development file storage
 MEDIA_URL = "/media/"
+
 MEDIA_ROOT = BASE_DIR / "media"
 
-# Private files must never be served through MEDIA_URL.
-PRIVATE_MEDIA_ROOT = BASE_DIR / "private_media"
+PRIVATE_MEDIA_ROOT = (
+    BASE_DIR / "private_media"
+)
 
-MAX_DONATION_IMAGE_SIZE = 5 * 1024 * 1024
+
+MAX_DONATION_IMAGE_SIZE = (
+    5 * 1024 * 1024
+)
+
 MAX_DONATION_IMAGES = 5
 
-# React development server
+
 CORS_ALLOWED_ORIGINS = [
     env(
         "FRONTEND_URL",
         default="http://127.0.0.1:5173",
     ),
 ]
+
 
 CSRF_TRUSTED_ORIGINS = [
     env(
@@ -183,22 +219,36 @@ CSRF_TRUSTED_ORIGINS = [
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         (
-            "rest_framework_simplejwt.authentication."
-            "JWTAuthentication"
+            "rest_framework_simplejwt."
+            "authentication.JWTAuthentication"
         ),
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
+        (
+            "rest_framework.permissions."
+            "IsAuthenticated"
+        ),
     ],
     "DEFAULT_RENDERER_CLASSES": [
-        "rest_framework.renderers.JSONRenderer",
-        "rest_framework.renderers.BrowsableAPIRenderer",
+        (
+            "rest_framework.renderers."
+            "JSONRenderer"
+        ),
+        (
+            "rest_framework.renderers."
+            "BrowsableAPIRenderer"
+        ),
     ],
 }
 
+
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ACCESS_TOKEN_LIFETIME": (
+        timedelta(minutes=5)
+    ),
+    "REFRESH_TOKEN_LIFETIME": (
+        timedelta(days=7)
+    ),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
@@ -207,10 +257,35 @@ SIMPLE_JWT = {
     "USER_ID_CLAIM": "user_id",
 }
 
+
 JWT_REFRESH_COOKIE_NAME = "sf_refresh"
 JWT_REFRESH_COOKIE_PATH = "/api/auth/"
 JWT_REFRESH_COOKIE_SECURE = not DEBUG
 JWT_REFRESH_COOKIE_HTTP_ONLY = True
 JWT_REFRESH_COOKIE_SAMESITE = "Lax"
 
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+SMARTFOOD_PICKUP_REMINDER_MINUTES = env.int(
+    "SMARTFOOD_PICKUP_REMINDER_MINUTES",
+    default=60,
+)
+
+SMARTFOOD_RECEIPT_GRACE_HOURS = env.int(
+    "SMARTFOOD_RECEIPT_GRACE_HOURS",
+    default=6,
+)
+
+SMARTFOOD_RECEIPT_HOLD_HOURS = env.int(
+    "SMARTFOOD_RECEIPT_HOLD_HOURS",
+    default=24,
+)
+
+SMARTFOOD_JOB_LOCK_TIMEOUT_MINUTES = env.int(
+    "SMARTFOOD_JOB_LOCK_TIMEOUT_MINUTES",
+    default=10,
+)
+
+
+DEFAULT_AUTO_FIELD = (
+    "django.db.models.BigAutoField"
+)

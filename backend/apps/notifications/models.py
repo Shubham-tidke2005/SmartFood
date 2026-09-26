@@ -22,6 +22,10 @@ class Notification(models.Model):
             "REQUEST_REJECTED",
             "Request rejected",
         )
+        REQUEST_EXPIRED = (
+            "REQUEST_EXPIRED",
+            "Request expired",
+        )
         ARRANGEMENT_CANCELLED = (
             "ARRANGEMENT_CANCELLED",
             "Arrangement cancelled",
@@ -29,6 +33,10 @@ class Notification(models.Model):
         DONATION_CANCELLED = (
             "DONATION_CANCELLED",
             "Donation cancelled",
+        )
+        DONATION_EXPIRED = (
+            "DONATION_EXPIRED",
+            "Donation expired",
         )
         HANDOVER_CONFIRMED = (
             "HANDOVER_CONFIRMED",
@@ -45,6 +53,42 @@ class Notification(models.Model):
         RECEIPT_REJECTED = (
             "RECEIPT_REJECTED",
             "Receipt rejected",
+        )
+        RECEIPT_REMINDER = (
+            "RECEIPT_REMINDER",
+            "Receipt confirmation reminder",
+        )
+        PICKUP_REMINDER = (
+            "PICKUP_REMINDER",
+            "Pickup reminder",
+        )
+        PICKUP_OVERDUE = (
+            "PICKUP_OVERDUE",
+            "Pickup overdue",
+        )
+        VOLUNTEER_TASK_ASSIGNED = (
+            "VOLUNTEER_TASK_ASSIGNED",
+            "Volunteer task assigned",
+        )
+        VOLUNTEER_PICKUP = (
+            "VOLUNTEER_PICKUP",
+            "Volunteer pickup",
+        )
+        VOLUNTEER_DELIVERY = (
+            "VOLUNTEER_DELIVERY",
+            "Volunteer delivery",
+        )
+        VOLUNTEER_TASK_FAILED = (
+            "VOLUNTEER_TASK_FAILED",
+            "Volunteer task failed",
+        )
+        VOLUNTEER_TASK_REASSIGNED = (
+            "VOLUNTEER_TASK_REASSIGNED",
+            "Volunteer task reassigned",
+        )
+        ACCOUNT_SUSPENDED = (
+            "ACCOUNT_SUSPENDED",
+            "Account suspended",
         )
 
     id = models.UUIDField(
@@ -65,7 +109,17 @@ class Notification(models.Model):
         db_index=True,
     )
 
-    title = models.CharField(max_length=160)
+    deduplication_key = models.CharField(
+        max_length=255,
+        unique=True,
+        null=True,
+        blank=True,
+    )
+
+    title = models.CharField(
+        max_length=160,
+    )
+
     message = models.TextField()
 
     data = models.JSONField(

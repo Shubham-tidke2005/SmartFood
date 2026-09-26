@@ -1,0 +1,1098 @@
+
+============================================================
+FILE: apps/donations/services.py
+============================================================
+from django.utils import timezone
+
+from .models import (
+    Donation,
+    DonationStatusHistory,
+)
+
+
+def record_donation_history(
+    *,
+    donation,
+    actor,
+    event_type,
+    from_status,
+    to_status,
+    reason="",
+):
+    return DonationStatusHistory.objects.create(
+        donation=donation,
+        actor=actor,
+        event_type=event_type,
+        from_status=from_status,
+        to_status=to_status,
+        reason=reason,
+    )
+
+
+def expire_donation_if_required(
+    donation,
+    *,
+    current_time=None,
+):
+    current_time = current_time or timezone.now()
+
+    if donation.status != Donation.Status.AVAILABLE:
+        return False
+
+    current_revision = donation.revisions.filter(
+        is_current=True
+    ).first()
+
+    if current_revision is None:
+        return False
+
+    if current_revision.pickup_deadline > current_time:
+        return False
+
+    previous_status = donation.status
+
+    donation.status = Donation.Status.EXPIRED
+    donation.closed_at = current_time
+
+    donation.save(
+        update_fields=[
+            "status",
+            "closed_at",
+            "updated_at",
+        ]
+    )
+
+    record_donation_history(
+        donation=donation,
+        actor=None,
+        event_type="EXPIRED",
+        from_status=previous_status,
+        to_status=Donation.Status.EXPIRED,
+        reason="Pickup deadline passed before pickup.",
+    )
+
+    return True
+
+============================================================
+FILE: apps/donations/request_services.py
+============================================================
+from decimal import Decimal
+
+from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
+
+from apps.notifications.models import Notification
+from apps.notifications.services import (
+    create_notifications,
+)
+from apps.receivers.models import (
+    ReceiverPreference,
+    ReceiverProfile,
+    ReceiverRequirement,
+)
+from apps.receivers.services import (
+    receiver_is_currently_available,
+)
+
+from .models import (
+    Donation,
+    DonationRequest,
+)
+from .services import record_donation_history
+
+
+def schedule_notifications(events):
+    frozen_events = [
+        {
+            **event,
+            "recipient_id": str(
+                event["recipient_id"]
+            ),
+        }
+        for event in events
+    ]
+
+    transaction.on_commit(
+        lambda: create_notifications(
+            frozen_events
+        )
+    )
+
+
+def get_locked_receiver_profile(receiver):
+    profile = (
+        ReceiverProfile.objects
+        .select_for_update()
+        .select_related("service_area")
+        .filter(
+            user=receiver,
+            operational=True,
+            service_area__active=True,
+        )
+        .first()
+    )
+
+    if profile is None:
+        return None, (
+            "The receiver does not have an active "
+            "operational profile."
+        )
+
+    if not receiver_is_currently_available(
+        receiver
+    ):
+        return None, (
+            "The receiver is not currently available."
+        )
+
+    return profile, None
+
+
+def get_locked_compatible_requirement(
+    *,
+    receiver,
+    revision,
+):
+    today = timezone.localdate()
+
+    preference_exists = (
+        ReceiverPreference.objects.filter(
+            receiver=receiver,
+            category=revision.category,
+            active=True,
+        ).exists()
+    )
+
+    if not preference_exists:
+        return None, (
+            "The receiver does not accept this "
+            "food category."
+        )
+
+    requirement = (
+        ReceiverRequirement.objects
+        .select_for_update()
+        .filter(
+            receiver=receiver,
+            category=revision.category,
+            unit=revision.unit,
+            active=True,
+        )
+        .filter(
+            Q(needed_until__isnull=True)
+            | Q(needed_until__gte=today)
+        )
+        .first()
+    )
+
+    if requirement is None:
+        return None, (
+            "No active matching receiver "
+            "requirement exists."
+        )
+
+    if (
+        requirement.remaining_quantity
+        < revision.quantity
+    ):
+        return None, (
+            "The receiver does not have enough "
+            "remaining capacity."
+        )
+
+    return requirement, None
+
+
+def validate_receiver_allocation_limit(
+    *,
+    receiver,
+    profile,
+):
+    active_count = (
+        DonationRequest.objects.filter(
+            receiver=receiver,
+            status=DonationRequest.Status.APPROVED,
+            donation__status__in=[
+                Donation.Status.RESERVED,
+                Donation.Status.PICKED_UP,
+                Donation.Status.DELIVERED,
+            ],
+        )
+        .values("donation_id")
+        .distinct()
+        .count()
+    )
+
+    if active_count >= profile.max_active_allocations:
+        return (
+            "The receiver has reached its active "
+            "allocation limit."
+        )
+
+    return None
+
+
+def reserve_requirement_capacity(
+    *,
+    requirement,
+    quantity,
+):
+    if requirement.remaining_quantity < quantity:
+        raise ValueError(
+            "Insufficient remaining receiver capacity."
+        )
+
+    requirement.quantity_reserved = (
+        requirement.quantity_reserved
+        + quantity
+    )
+
+    requirement.save(
+        update_fields=[
+            "quantity_reserved",
+            "updated_at",
+        ]
+    )
+
+
+def release_requirement_capacity(
+    *,
+    donation_request,
+):
+    revision = donation_request.requested_revision
+
+    requirement = (
+        ReceiverRequirement.objects
+        .select_for_update()
+        .filter(
+            receiver=donation_request.receiver,
+            category=revision.category,
+            unit=revision.unit,
+        )
+        .first()
+    )
+
+    if requirement is None:
+        return None
+
+    requirement.quantity_reserved = max(
+        requirement.quantity_reserved
+        - revision.quantity,
+        Decimal("0.000"),
+    )
+
+    requirement.save(
+        update_fields=[
+            "quantity_reserved",
+            "updated_at",
+        ]
+    )
+
+    return requirement
+
+
+def cancel_approved_request_for_donation(
+    *,
+    donation,
+    actor,
+    reason,
+):
+    approved_request = (
+        DonationRequest.objects
+        .select_for_update()
+        .select_related(
+            "receiver",
+            "requested_revision",
+            "requested_revision__category",
+        )
+        .filter(
+            donation=donation,
+            status=DonationRequest.Status.APPROVED,
+        )
+        .first()
+    )
+
+    if approved_request is None:
+        return None
+
+    release_requirement_capacity(
+        donation_request=approved_request
+    )
+
+    approved_request.status = (
+        DonationRequest.Status.CANCELLED
+    )
+    approved_request.decided_at = timezone.now()
+    approved_request.reason = reason
+
+    approved_request.save(
+        update_fields=[
+            "status",
+            "decided_at",
+            "reason",
+            "updated_at",
+        ]
+    )
+
+    schedule_notifications(
+        [
+            {
+                "recipient_id": (
+                    approved_request.receiver_id
+                ),
+                "notification_type": (
+                    Notification.Type
+                    .ARRANGEMENT_CANCELLED
+                ),
+                "title": (
+                    "Donation arrangement cancelled"
+                ),
+                "message": reason,
+                "data": {
+                    "donation_id": str(donation.id),
+                    "request_id": str(
+                        approved_request.id
+                    ),
+                },
+            }
+        ]
+    )
+
+    return approved_request
+
+============================================================
+FILE: apps/donations/request_serializers.py
+============================================================
+from rest_framework import serializers
+
+from .models import DonationRequest
+
+
+class DonationRequestCreateSerializer(
+    serializers.Serializer
+):
+    proposed_mode = serializers.ChoiceField(
+        choices=DonationRequest.TransportMode.choices
+    )
+
+
+class DonationRequestDecisionSerializer(
+    serializers.Serializer
+):
+    reason = serializers.CharField(
+        max_length=1000,
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+
+
+class DonationRequestCancellationSerializer(
+    serializers.Serializer
+):
+    reason = serializers.CharField(
+        min_length=3,
+        max_length=1000,
+    )
+
+
+class DonationRequestReadSerializer(
+    serializers.ModelSerializer
+):
+    receiver_name = serializers.CharField(
+        source="receiver.display_name",
+        read_only=True,
+    )
+
+    receiver_email = serializers.EmailField(
+        source="receiver.email",
+        read_only=True,
+    )
+
+    donor_name = serializers.CharField(
+        source="donation.donor.display_name",
+        read_only=True,
+    )
+
+    food_name = serializers.CharField(
+        source="requested_revision.food_name",
+        read_only=True,
+    )
+
+    category_name = serializers.CharField(
+        source="requested_revision.category.name",
+        read_only=True,
+    )
+
+    quantity = serializers.DecimalField(
+        source="requested_revision.quantity",
+        max_digits=12,
+        decimal_places=3,
+        read_only=True,
+    )
+
+    unit = serializers.CharField(
+        source="requested_revision.unit",
+        read_only=True,
+    )
+
+    pickup_deadline = serializers.DateTimeField(
+        source="requested_revision.pickup_deadline",
+        read_only=True,
+    )
+
+    class Meta:
+        model = DonationRequest
+
+        fields = [
+            "id",
+            "donation",
+            "receiver",
+            "receiver_name",
+            "receiver_email",
+            "donor_name",
+            "requested_revision",
+            "food_name",
+            "category_name",
+            "quantity",
+            "unit",
+            "status",
+            "proposed_mode",
+            "pickup_deadline",
+            "expires_at",
+            "decided_at",
+            "reason",
+            "created_at",
+            "updated_at",
+        ]
+
+        read_only_fields = fields
+
+============================================================
+FILE: apps/logistics/services.py
+============================================================
+from django.db import transaction
+
+from apps.donations.models import (
+    DonationRequest,
+)
+from apps.donations.request_services import (
+    release_requirement_capacity,
+)
+from apps.notifications.services import (
+    create_notifications,
+)
+
+
+DIRECT_TRANSPORT_MODES = {
+    DonationRequest.TransportMode.RECEIVER_COLLECTION,
+    DonationRequest.TransportMode.DONOR_DELIVERY,
+}
+
+
+def get_locked_approved_request(donation):
+    return (
+        DonationRequest.objects
+        .select_for_update()
+        .select_related(
+            "receiver",
+            "requested_revision",
+            "requested_revision__category",
+        )
+        .filter(
+            donation=donation,
+            status=DonationRequest.Status.APPROVED,
+        )
+        .first()
+    )
+
+
+def schedule_logistics_notifications(events):
+    frozen_events = [
+        {
+            **event,
+            "recipient_id": str(
+                event["recipient_id"]
+            ),
+        }
+        for event in events
+    ]
+
+    transaction.on_commit(
+        lambda: create_notifications(
+            frozen_events
+        )
+    )
+
+
+def release_capacity_after_receipt(
+    donation_request,
+):
+    return release_requirement_capacity(
+        donation_request=donation_request
+    )
+
+============================================================
+FILE: apps/logistics/volunteer_services.py
+============================================================
+from math import asin, cos, radians, sin, sqrt
+
+from django.db import transaction
+from django.utils import timezone
+
+from apps.donations.models import (
+    DonationRequest,
+)
+from apps.notifications.services import (
+    create_notifications,
+)
+from apps.receivers.models import (
+    ReceiverProfile,
+    ServiceArea,
+)
+
+from .models import (
+    VolunteerAvailability,
+    VolunteerTask,
+    VolunteerTaskHistory,
+)
+
+
+ACTIVE_TASK_STATUSES = [
+    VolunteerTask.Status.ASSIGNED,
+    VolunteerTask.Status.ARRIVED_AT_DONOR,
+    VolunteerTask.Status.PICKED_UP,
+    VolunteerTask.Status.ARRIVED_AT_RECEIVER,
+]
+
+
+def normalize_area(value):
+    return " ".join(value.strip().lower().split())
+
+
+def distance_km(area_one, area_two):
+    radius = 6371.0088
+
+    lat_one = radians(float(area_one.latitude))
+    lon_one = radians(float(area_one.longitude))
+    lat_two = radians(float(area_two.latitude))
+    lon_two = radians(float(area_two.longitude))
+
+    lat_difference = lat_two - lat_one
+    lon_difference = lon_two - lon_one
+
+    value = (
+        sin(lat_difference / 2) ** 2
+        + cos(lat_one)
+        * cos(lat_two)
+        * sin(lon_difference / 2) ** 2
+    )
+
+    return 2 * radius * asin(sqrt(value))
+
+
+def volunteer_is_available(volunteer):
+    current = timezone.localtime()
+    weekday = current.weekday()
+    current_time = current.time()
+
+    windows = VolunteerAvailability.objects.filter(
+        volunteer=volunteer,
+        active=True,
+    )
+
+    for window in windows:
+        if window.starts_at <= window.ends_at:
+            if (
+                window.weekday == weekday
+                and window.starts_at
+                <= current_time
+                <= window.ends_at
+            ):
+                return True
+        else:
+            if (
+                window.weekday == weekday
+                and current_time >= window.starts_at
+            ):
+                return True
+
+            if (
+                (window.weekday + 1) % 7 == weekday
+                and current_time <= window.ends_at
+            ):
+                return True
+
+    return False
+
+
+def record_task_history(
+    *,
+    task,
+    actor,
+    event_type,
+    from_status,
+    to_status,
+    reason="",
+):
+    return VolunteerTaskHistory.objects.create(
+        task=task,
+        actor=actor,
+        event_type=event_type,
+        from_status=from_status,
+        to_status=to_status,
+        reason=reason,
+    )
+
+
+def schedule_task_notifications(events):
+    frozen_events = [
+        {
+            **event,
+            "recipient_id": str(
+                event["recipient_id"]
+            ),
+        }
+        for event in events
+    ]
+
+    transaction.on_commit(
+        lambda: create_notifications(
+            frozen_events
+        )
+    )
+
+
+def refresh_volunteer_status(profile):
+    active_count = VolunteerTask.objects.filter(
+        assigned_volunteer=profile.user,
+        status__in=ACTIVE_TASK_STATUSES,
+    ).count()
+
+    if (
+        profile.availability_status
+        == profile.AvailabilityStatus.UNAVAILABLE
+    ):
+        return
+
+    if active_count >= profile.max_active_tasks:
+        profile.availability_status = (
+            profile.AvailabilityStatus.BUSY
+        )
+    else:
+        profile.availability_status = (
+            profile.AvailabilityStatus.AVAILABLE
+        )
+
+    profile.save(
+        update_fields=[
+            "availability_status",
+            "updated_at",
+        ]
+    )
+
+
+def create_task_for_approved_request(
+    donation_request,
+):
+    if (
+        donation_request.proposed_mode
+        != DonationRequest.TransportMode
+        .VOLUNTEER_DELIVERY
+    ):
+        return None
+
+    revision = donation_request.requested_revision
+
+    receiver_profile = (
+        ReceiverProfile.objects
+        .select_related("service_area")
+        .get(user=donation_request.receiver)
+    )
+
+    area_value = normalize_area(
+        revision.pickup_area
+    )
+
+    pickup_area = None
+
+    for service_area in ServiceArea.objects.filter(
+        active=True
+    ):
+        if area_value in {
+            normalize_area(service_area.name),
+            normalize_area(service_area.code),
+        }:
+            pickup_area = service_area
+            break
+
+    task, created = VolunteerTask.objects.get_or_create(
+        donation=donation_request.donation,
+        defaults={
+            "donation_request": donation_request,
+            "pickup_service_area": pickup_area,
+            "receiver_service_area": (
+                receiver_profile.service_area
+            ),
+            "pickup_area": revision.pickup_area,
+            "required_quantity": revision.quantity,
+            "unit": revision.unit,
+            "pickup_deadline": (
+                revision.pickup_deadline
+            ),
+            "status": VolunteerTask.Status.OPEN,
+        },
+    )
+
+    if created:
+        record_task_history(
+            task=task,
+            actor=None,
+            event_type="TASK_CREATED",
+            from_status="",
+            to_status=VolunteerTask.Status.OPEN,
+            reason=(
+                "Volunteer transport task created."
+            ),
+        )
+
+    return task
+
+============================================================
+FILE: apps/moderation/models.py
+============================================================
+import uuid
+from pathlib import Path
+
+from django.conf import settings
+from django.db import models
+from django.db.models import Q
+
+from .storage import private_verification_storage
+
+
+def verification_document_path(instance, filename):
+    extension = Path(filename).suffix.lower()
+
+    return (
+        f"verifications/"
+        f"{instance.submission.user_id}/"
+        f"{uuid.uuid4().hex}{extension}"
+    )
+
+
+class VerificationSubmission(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected"
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="verification_submissions",
+    )
+
+    attempt = models.PositiveIntegerField()
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+
+    submitted_details = models.JSONField(
+        default=dict,
+    )
+
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="reviewed_verifications",
+        null=True,
+        blank=True,
+    )
+
+    reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    reason = models.TextField(
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        db_table = "verification_submissions"
+
+        ordering = [
+            "-created_at",
+        ]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "user",
+                    "attempt",
+                ],
+                name="unique_verification_attempt",
+            ),
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=Q(status="PENDING"),
+                name="one_pending_verification_per_user",
+            ),
+            models.CheckConstraint(
+                condition=Q(attempt__gt=0),
+                name="verification_attempt_positive",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.user.email} — "
+            f"attempt {self.attempt} — "
+            f"{self.status}"
+        )
+
+
+class VerificationDocument(models.Model):
+    class DocumentType(models.TextChoices):
+        IDENTITY = "IDENTITY", "Identity document"
+        ORGANIZATION_REGISTRATION = (
+            "ORGANIZATION_REGISTRATION",
+            "Organization registration",
+        )
+        ADDRESS_PROOF = "ADDRESS_PROOF", "Address proof"
+        OTHER = "OTHER", "Other document"
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    submission = models.ForeignKey(
+        VerificationSubmission,
+        on_delete=models.PROTECT,
+        related_name="documents",
+    )
+
+    document_type = models.CharField(
+        max_length=40,
+        choices=DocumentType.choices,
+    )
+
+    file = models.FileField(
+        storage=private_verification_storage,
+        upload_to=verification_document_path,
+        max_length=500,
+    )
+
+    original_name = models.CharField(
+        max_length=255,
+    )
+
+    mime_type = models.CharField(
+        max_length=100,
+    )
+
+    size_bytes = models.PositiveIntegerField()
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        db_table = "verification_documents"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return self.original_name
+
+
+class VerificationHistory(models.Model):
+    class Action(models.TextChoices):
+        SUBMITTED = "SUBMITTED", "Submitted"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected"
+        SUSPENDED = "SUSPENDED", "Suspended"
+        REOPENED = "REOPENED", "Reopened"
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="verification_history",
+    )
+
+    submission = models.ForeignKey(
+        VerificationSubmission,
+        on_delete=models.PROTECT,
+        related_name="history",
+        null=True,
+        blank=True,
+    )
+
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="verification_actions",
+    )
+
+    action = models.CharField(
+        max_length=20,
+        choices=Action.choices,
+    )
+
+    from_status = models.CharField(
+        max_length=20,
+        blank=True,
+    )
+
+    to_status = models.CharField(
+        max_length=20,
+    )
+
+    reason = models.TextField(
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        db_table = "verification_history"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return (
+            f"{self.user.email} — "
+            f"{self.action} — "
+            f"{self.created_at}"
+        )
+
+============================================================
+FILE: apps/moderation/services.py
+============================================================
+FILE DOES NOT EXIST
+
+============================================================
+FILE: apps/notifications/models.py
+============================================================
+import uuid
+
+from django.conf import settings
+from django.db import models
+
+
+class Notification(models.Model):
+    class Type(models.TextChoices):
+        REQUEST_SUBMITTED = (
+            "REQUEST_SUBMITTED",
+            "Request submitted",
+        )
+        REQUEST_WITHDRAWN = (
+            "REQUEST_WITHDRAWN",
+            "Request withdrawn",
+        )
+        REQUEST_APPROVED = (
+            "REQUEST_APPROVED",
+            "Request approved",
+        )
+        REQUEST_REJECTED = (
+            "REQUEST_REJECTED",
+            "Request rejected",
+        )
+        ARRANGEMENT_CANCELLED = (
+            "ARRANGEMENT_CANCELLED",
+            "Arrangement cancelled",
+        )
+        DONATION_CANCELLED = (
+            "DONATION_CANCELLED",
+            "Donation cancelled",
+        )
+        HANDOVER_CONFIRMED = (
+            "HANDOVER_CONFIRMED",
+            "Handover confirmed",
+        )
+        DELIVERY_RECORDED = (
+            "DELIVERY_RECORDED",
+            "Delivery recorded",
+        )
+        RECEIPT_CONFIRMED = (
+            "RECEIPT_CONFIRMED",
+            "Receipt confirmed",
+        )
+        RECEIPT_REJECTED = (
+            "RECEIPT_REJECTED",
+            "Receipt rejected",
+        )
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="notifications",
+    )
+
+    notification_type = models.CharField(
+        max_length=40,
+        choices=Type.choices,
+        db_index=True,
+    )
+
+    title = models.CharField(max_length=160)
+    message = models.TextField()
+
+    data = models.JSONField(
+        default=dict,
+        blank=True,
+    )
+
+    read_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+    )
+
+    class Meta:
+        db_table = "notifications"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return (
+            f"{self.recipient.email}: "
+            f"{self.notification_type}"
+        )
