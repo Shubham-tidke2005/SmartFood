@@ -200,20 +200,18 @@ MAX_DONATION_IMAGE_SIZE = (
 MAX_DONATION_IMAGES = 5
 
 
+# React development servers
 CORS_ALLOWED_ORIGINS = [
-    env(
-        "FRONTEND_URL",
-        default="http://127.0.0.1:5173",
-    ),
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
 ]
-
 
 CSRF_TRUSTED_ORIGINS = [
-    env(
-        "FRONTEND_URL",
-        default="http://127.0.0.1:5173",
-    ),
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
 ]
+
+CORS_ALLOW_CREDENTIALS = True
 
 
 REST_FRAMEWORK = {

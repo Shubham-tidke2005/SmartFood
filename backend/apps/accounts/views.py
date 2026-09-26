@@ -17,6 +17,8 @@ from django.views.decorators.csrf import (
     csrf_protect,
     ensure_csrf_cookie,
 )
+from django.middleware.csrf import get_token
+from rest_framework.permissions import AllowAny
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -44,6 +46,7 @@ from .services import (
 
 
 User = get_user_model()
+
 
 
 def set_refresh_cookie(response, refresh_token):
@@ -529,3 +532,14 @@ class MyProfileView(APIView):
         serializer.save()
 
         return Response(serializer.data)
+    
+class CSRFTokenView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response(
+            {
+                "csrfToken": get_token(request),
+            }
+        )
