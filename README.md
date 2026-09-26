@@ -68,7 +68,7 @@ Do not commit:
 - Uploaded verification documents
 - Private user information
 - Real datasets
-- Trained model files containing private data
+- Trained model files containing private data.
 
 ## Branches
 
