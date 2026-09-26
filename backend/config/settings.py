@@ -158,6 +158,11 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# Private files must never be served through MEDIA_URL.
+PRIVATE_MEDIA_ROOT = BASE_DIR / "private_media"
+
+MAX_DONATION_IMAGE_SIZE = 5 * 1024 * 1024
+MAX_DONATION_IMAGES = 5
 
 # React development server
 CORS_ALLOWED_ORIGINS = [

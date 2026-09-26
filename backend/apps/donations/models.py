@@ -1,8 +1,20 @@
 import uuid
 
+from pathlib import Path
+
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
+
+
+def donation_image_path(instance, filename):
+    extension = Path(filename).suffix.lower()
+
+    return (
+        f"donations/"
+        f"{instance.revision.donation_id}/"
+        f"{uuid.uuid4().hex}{extension}"
+    )
 
 
 class FoodCategory(models.Model):
@@ -23,6 +35,14 @@ class FoodCategory(models.Model):
 
     active = models.BooleanField(
         default=True,
+    )
+
+    requires_preparation_time = models.BooleanField(
+        default=False,
+    )
+
+    requires_use_by = models.BooleanField(
+        default=False,
     )
 
     created_at = models.DateTimeField(
@@ -169,6 +189,21 @@ class DonationRevision(models.Model):
         related_name="proposed_donation_revisions",
     )
 
+    prepared_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    use_by_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    pickup_area = models.CharField(
+        max_length=100,
+        default="",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True,
     )
@@ -204,11 +239,237 @@ class DonationRevision(models.Model):
             ),
             models.CheckConstraint(
                 condition=Q(
-                    pickup_deadline__gt=models.F("pickup_starts_at"),
+                    pickup_deadline__gt=models.F(
+                        "pickup_starts_at"
+                    )
                 ),
                 name="pickup_deadline_after_start",
             ),
         ]
 
     def __str__(self):
-        return f"{self.food_name} — revision {self.number}"
+        return (
+            f"{self.food_name} — "
+            f"revision {self.number}"
+        )
+
+
+class DonationRequest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pending"
+        APPROVED = "APPROVED", "Approved"
+        REJECTED = "REJECTED", "Rejected"
+        WITHDRAWN = "WITHDRAWN", "Withdrawn"
+        EXPIRED = "EXPIRED", "Expired"
+        CANCELLED = "CANCELLED", "Cancelled"
+
+    class TransportMode(models.TextChoices):
+        RECEIVER_COLLECTION = (
+            "RECEIVER_COLLECTION",
+            "Receiver collection",
+        )
+        DONOR_DELIVERY = (
+            "DONOR_DELIVERY",
+            "Donor delivery",
+        )
+        VOLUNTEER_DELIVERY = (
+            "VOLUNTEER_DELIVERY",
+            "Volunteer delivery",
+        )
+
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    donation = models.ForeignKey(
+        Donation,
+        on_delete=models.PROTECT,
+        related_name="requests",
+    )
+
+    receiver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="donation_requests",
+    )
+
+    requested_revision = models.ForeignKey(
+        DonationRevision,
+        on_delete=models.PROTECT,
+        related_name="requests",
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+
+    proposed_mode = models.CharField(
+        max_length=30,
+        choices=TransportMode.choices,
+    )
+
+    expires_at = models.DateTimeField()
+
+    decided_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    reason = models.TextField(
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+    )
+
+    class Meta:
+        db_table = "donation_requests"
+        ordering = ["-created_at"]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "donation",
+                    "receiver",
+                ],
+                condition=Q(
+                    status__in=[
+                        "PENDING",
+                        "APPROVED",
+                    ]
+                ),
+                name=(
+                    "one_active_request_per_receiver_donation"
+                ),
+            ),
+            models.UniqueConstraint(
+                fields=["donation"],
+                condition=Q(status="APPROVED"),
+                name="one_approved_request_per_donation",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.receiver.email} → "
+            f"{self.donation_id} → "
+            f"{self.status}"
+        )
+
+
+class DonationImage(models.Model):
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    revision = models.ForeignKey(
+        DonationRevision,
+        on_delete=models.PROTECT,
+        related_name="images",
+    )
+
+    image = models.ImageField(
+        upload_to=donation_image_path,
+        max_length=500,
+    )
+
+    original_name = models.CharField(
+        max_length=255,
+    )
+
+    mime_type = models.CharField(
+        max_length=100,
+    )
+
+    size_bytes = models.PositiveIntegerField()
+
+    position = models.PositiveSmallIntegerField(
+        default=0,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        db_table = "donation_images"
+        ordering = ["position", "created_at"]
+
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "revision",
+                    "position",
+                ],
+                name="unique_image_position_per_revision",
+            ),
+        ]
+
+    def __str__(self):
+        return self.original_name
+
+
+class DonationStatusHistory(models.Model):
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    donation = models.ForeignKey(
+        Donation,
+        on_delete=models.PROTECT,
+        related_name="status_history",
+    )
+
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="donation_history_actions",
+        null=True,
+        blank=True,
+    )
+
+    event_type = models.CharField(
+        max_length=50,
+    )
+
+    from_status = models.CharField(
+        max_length=20,
+        blank=True,
+    )
+
+    to_status = models.CharField(
+        max_length=20,
+    )
+
+    reason = models.TextField(
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+    )
+
+    class Meta:
+        db_table = "donation_status_history"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return (
+            f"{self.donation_id}: "
+            f"{self.from_status} → "
+            f"{self.to_status}"
+        )
