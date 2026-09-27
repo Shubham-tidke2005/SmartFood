@@ -385,11 +385,11 @@ export function DonorDonationDetailPage() {
 
 export function DonorRequestsPage() {
   const resource = useApiResource(
-    "/donation-requests/?scope=donor",
-    {
-      list: true,
-    },
-  );
+  "/donations/requests/",
+  {
+    list: true,
+  },
+);
 
   return (
     <div>

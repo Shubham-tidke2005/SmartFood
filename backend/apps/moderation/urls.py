@@ -1,5 +1,11 @@
 from django.urls import path
 
+from .complaint_views import (
+    ComplaintAdminUpdateView,
+    ComplaintDetailView,
+    ComplaintListCreateView,
+)
+
 from .views import (
     ApproveVerificationView,
     RejectVerificationView,
@@ -63,9 +69,29 @@ urlpatterns = [
     path(
         (
             "admin/users/"
-            "<uuid:user_id>/reopen-verification/"
+            "<uuid:user_id>/"
+            "reopen-verification/"
         ),
         ReopenParticipantVerificationView.as_view(),
         name="participant-reopen",
+    ),
+
+    path(
+        "complaints/",
+        ComplaintListCreateView.as_view(),
+        name="complaint-list-create",
+    ),
+    path(
+        "complaints/<uuid:complaint_id>/",
+        ComplaintDetailView.as_view(),
+        name="complaint-detail",
+    ),
+    path(
+        (
+            "complaints/"
+            "<uuid:complaint_id>/review/"
+        ),
+        ComplaintAdminUpdateView.as_view(),
+        name="complaint-review",
     ),
 ]

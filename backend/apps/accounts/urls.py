@@ -1,5 +1,9 @@
 from django.urls import path
 
+from .admin_views import (
+    AdminUserListView,
+)
+
 from .views import (
     ContactVerificationConfirmView,
     ContactVerificationResendView,
@@ -67,5 +71,10 @@ urlpatterns = [
         "profiles/me/",
         MyProfileView.as_view(),
         name="my-profile",
+    ),
+    path(
+        "admin/users/",
+        AdminUserListView.as_view(),
+        name="admin-user-list",
     ),
 ]

@@ -2,6 +2,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+
 from config.views import health_check
 
 
@@ -28,13 +29,21 @@ urlpatterns = [
         include("apps.moderation.urls"),
     ),
     path(
-    "api/receivers/",
-    include("apps.receivers.urls"),
-),
+        "api/receivers/",
+        include("apps.receivers.urls"),
+    ),
     path(
-    "api/logistics/",
-    include("apps.logistics.urls"),
-),
+        "api/logistics/",
+        include("apps.logistics.urls"),
+    ),
+    path(
+        "api/notifications/",
+        include("apps.notifications.urls"),
+    ),
+    path(
+        "api/analytics/",
+        include("apps.analytics.urls"),
+    ),
 ]
 
 

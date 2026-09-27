@@ -229,3 +229,6 @@ class VerificationHistory(models.Model):
             f"{self.action} — "
             f"{self.created_at}"
         )
+        
+        
+from .complaints import Complaint  # noqa: E402, F401
