@@ -19,7 +19,7 @@ import {
 
 import { motion } from "motion/react";
 
-import { useAuth } from "../auth/AuthProvider";
+import useAuth from "../auth/useAuth";
 import Button from "../components/ui/Button";
 import {
   ErrorMessage,

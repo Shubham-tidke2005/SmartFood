@@ -19,7 +19,7 @@ import {
 
 import { AnimatePresence, motion } from "motion/react";
 
-import { useAuth } from "../../auth/AuthProvider";
+import useAuth from "../../auth/useAuth";
 import { getNavigationForRole } from "../../config/navigation";
 import { cn } from "../../lib/cn";
 import Button from "../ui/Button";

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import PlatformAnalyticsView
+from .views import AnalyticsView
 
 
 app_name = "analytics"
@@ -9,7 +9,7 @@ app_name = "analytics"
 urlpatterns = [
     path(
         "",
-        PlatformAnalyticsView.as_view(),
-        name="platform-analytics",
+        AnalyticsView.as_view(),
+        name="analytics",
     ),
 ]

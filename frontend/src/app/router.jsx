@@ -5,6 +5,7 @@ import {
 
 import ProtectedRoute from "../auth/ProtectedRoute";
 import RoleRoute from "../auth/RoleRoute";
+
 import AppShell from "../components/layout/AppShell";
 
 import DashboardPage from "../pages/DashboardPage";
@@ -12,15 +13,18 @@ import LoginPage from "../pages/LoginPage";
 import NotFoundPage from "../pages/NotFoundPage";
 import UnauthorizedPage from "../pages/UnauthorizedPage";
 
-import {
-  CreateDonationPage,
-  DonorDonationDetailPage,
-  DonorHistoryPage,
-  DonorRequestsPage,
-} from "../pages/donor/DonorPages";
+import CreateDonationPage from "../pages/donor/CreateDonationPage";
+import DonationRequestsPage from "../pages/donor/DonationRequestsPage";
+import ReceiverRecommendationsPage from "../pages/donor/ReceiverRecommendationsPage";
 
 import {
-  BrowseDonationsPage,
+  DonorDonationDetailPage,
+  DonorHistoryPage,
+} from "../pages/donor/DonorPages";
+
+import BrowseDonationsPage from "../pages/receiver/BrowseDonationsPage";
+
+import {
   ReceiptConfirmationPage,
   ReceiverDonationDetailPage,
   ReceiverRequestsPage,
@@ -34,12 +38,16 @@ import {
 } from "../pages/volunteer/VolunteerPages";
 
 import {
-  AdminAnalyticsPage,
-  AdminComplaintsPage,
   AdminDonationsPage,
   AdminUsersPage,
   VerificationQueuePage,
 } from "../pages/admin/AdminPages";
+
+import AdminComplaintsPage from "../pages/admin/AdminComplaintsPage";
+
+import AnalyticsPage from "../pages/shared/AnalyticsPage";
+import ComplaintsPage from "../pages/shared/ComplaintsPage";
+import DirectFulfilmentPage from "../pages/shared/DirectFulfilmentPage";
 
 import {
   HelpReportingPage,
@@ -48,6 +56,7 @@ import {
   ProfilePage,
   RegistrationPage,
 } from "../pages/shared/SharedPages";
+
 
 const router = createBrowserRouter([
   {
@@ -59,6 +68,10 @@ const router = createBrowserRouter([
       />
     ),
   },
+
+  /*
+   * Public routes
+   */
   {
     path: "/login",
     element: <LoginPage />,
@@ -76,12 +89,18 @@ const router = createBrowserRouter([
     element: <UnauthorizedPage />,
   },
 
+  /*
+   * Authenticated routes
+   */
   {
     element: <ProtectedRoute />,
     children: [
       {
         element: <AppShell />,
         children: [
+          /*
+           * Shared authenticated pages
+           */
           {
             path: "/dashboard",
             element: <DashboardPage />,
@@ -95,10 +114,45 @@ const router = createBrowserRouter([
             element: <NotificationsPage />,
           },
           {
+            path: "/complaints",
+            element: <ComplaintsPage />,
+          },
+          {
+            path: "/analytics",
+            element: <AnalyticsPage />,
+          },
+          {
             path: "/help",
             element: <HelpReportingPage />,
           },
 
+          /*
+           * Shared fulfilment routes
+           *
+           * Django still verifies whether the user
+           * is the donor, approved receiver or admin.
+           */
+          {
+            element: (
+              <RoleRoute
+                allowedRoles={[
+                  "DONOR",
+                  "RECEIVER",
+                  "ADMIN",
+                ]}
+              />
+            ),
+            children: [
+              {
+                path: "/fulfilment/:donationId",
+                element: <DirectFulfilmentPage />,
+              },
+            ],
+          },
+
+          /*
+           * Donor routes
+           */
           {
             element: (
               <RoleRoute
@@ -115,8 +169,17 @@ const router = createBrowserRouter([
                 element: <DonorDonationDetailPage />,
               },
               {
+                path: (
+                  "/donor/donations/"
+                  + ":donationId/recommendations"
+                ),
+                element: (
+                  <ReceiverRecommendationsPage />
+                ),
+              },
+              {
                 path: "/donor/requests",
-                element: <DonorRequestsPage />,
+                element: <DonationRequestsPage />,
               },
               {
                 path: "/donor/history",
@@ -125,6 +188,9 @@ const router = createBrowserRouter([
             ],
           },
 
+          /*
+           * Receiver routes
+           */
           {
             element: (
               <RoleRoute
@@ -137,24 +203,39 @@ const router = createBrowserRouter([
                 element: <BrowseDonationsPage />,
               },
               {
-                path: "/receiver/donations/:donationId",
-                element: <ReceiverDonationDetailPage />,
+                path: (
+                  "/receiver/donations/"
+                  + ":donationId"
+                ),
+                element: (
+                  <ReceiverDonationDetailPage />
+                ),
               },
               {
                 path: "/receiver/requirements",
-                element: <ReceiverRequirementsPage />,
+                element: (
+                  <ReceiverRequirementsPage />
+                ),
               },
               {
                 path: "/receiver/requests",
                 element: <ReceiverRequestsPage />,
               },
               {
-                path: "/receiver/receipts/:donationId",
-                element: <ReceiptConfirmationPage />,
+                path: (
+                  "/receiver/receipts/"
+                  + ":donationId"
+                ),
+                element: (
+                  <ReceiptConfirmationPage />
+                ),
               },
             ],
           },
 
+          /*
+           * Volunteer routes
+           */
           {
             element: (
               <RoleRoute
@@ -172,11 +253,16 @@ const router = createBrowserRouter([
               },
               {
                 path: "/volunteer/history",
-                element: <VolunteerTaskHistoryPage />,
+                element: (
+                  <VolunteerTaskHistoryPage />
+                ),
               },
             ],
           },
 
+          /*
+           * Administrator routes
+           */
           {
             element: (
               <RoleRoute
@@ -202,7 +288,7 @@ const router = createBrowserRouter([
               },
               {
                 path: "/admin/analytics",
-                element: <AdminAnalyticsPage />,
+                element: <AnalyticsPage />,
               },
             ],
           },
@@ -211,10 +297,14 @@ const router = createBrowserRouter([
     ],
   },
 
+  /*
+   * Unknown route
+   */
   {
     path: "*",
     element: <NotFoundPage />,
   },
 ]);
+
 
 export default router;

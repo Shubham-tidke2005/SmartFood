@@ -9,7 +9,7 @@ import {
 import { Link } from "react-router-dom";
 import { motion } from "motion/react";
 
-import { useAuth } from "../auth/AuthProvider";
+import useAuth from "../auth/useAuth";
 import StatusBadge from "../components/ui/StatusBadge";
 
 const roleContent = {

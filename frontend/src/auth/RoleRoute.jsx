@@ -1,35 +1,62 @@
 import {
   Navigate,
   Outlet,
-  useLocation,
 } from "react-router-dom";
 
-import { useAuth } from "./AuthProvider";
+import useAuth from "./useAuth";
+
 
 export default function RoleRoute({
+  roles,
   allowedRoles,
+  children,
 }) {
-  const { user } = useAuth();
-  const location = useLocation();
+  const {
+    user,
+    initializing,
+  } = useAuth();
 
-  const normalizedRole =
-    user?.role?.toUpperCase();
 
-  const permitted = allowedRoles
-    .map((role) => role.toUpperCase())
-    .includes(normalizedRole);
+  if (initializing) {
+    return (
+      <div
+        className="flex min-h-72 items-center justify-center"
+        role="status"
+      >
+        <div className="h-9 w-9 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
+      </div>
+    );
+  }
 
-  if (!permitted) {
+
+  if (!user) {
     return (
       <Navigate
-        to="/unauthorized"
+        to="/login"
         replace
-        state={{
-          from: location.pathname,
-        }}
       />
     );
   }
 
-  return <Outlet />;
+
+  const acceptedRoles =
+    allowedRoles ||
+    roles ||
+    [];
+
+
+  if (
+    acceptedRoles.length > 0 &&
+    !acceptedRoles.includes(user.role)
+  ) {
+    return (
+      <Navigate
+        to="/unauthorized"
+        replace
+      />
+    );
+  }
+
+
+  return children || <Outlet />;
 }

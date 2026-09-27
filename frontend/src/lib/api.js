@@ -1,87 +1,37 @@
 import axios from "axios";
 
-import {
-  clearAccessToken,
-  getAccessToken,
-  setAccessToken,
-} from "../auth/tokenStore";
 
-const baseURL =
-  import.meta.env.VITE_API_BASE_URL ||
-  "/api";
-
-
-export const api = axios.create({
-  baseURL,
-  withCredentials: true,
-  headers: {
-    Accept: "application/json",
-  },
-});
-
-
-const csrfClient = axios.create({
-  baseURL,
-  withCredentials: true,
-  headers: {
-    Accept: "application/json",
-  },
-});
-
-
-const refreshClient = axios.create({
-  baseURL,
-  withCredentials: true,
-  headers: {
-    Accept: "application/json",
-    "Content-Type": "application/json",
-  },
-});
-
-
-let csrfPromise = null;
+let accessToken = null;
 let refreshPromise = null;
+let csrfPromise = null;
 
 
-/*
- * Read a cookie stored by Django.
- *
- * Django's default CSRF cookie name is "csrftoken".
- */
-function getCookie(name) {
+function readCookie(name) {
   const cookies = document.cookie
-    ? document.cookie.split(";")
-    : [];
+    .split(";")
+    .map((cookie) => cookie.trim());
 
-  for (const cookie of cookies) {
-    const trimmedCookie = cookie.trim();
+  const match = cookies.find((cookie) =>
+    cookie.startsWith(`${name}=`)
+  );
 
-    if (
-      trimmedCookie.startsWith(
-        `${encodeURIComponent(name)}=`,
-      )
-    ) {
-      return decodeURIComponent(
-        trimmedCookie.substring(
-          trimmedCookie.indexOf("=") + 1,
-        ),
-      );
-    }
+  if (!match) {
+    return null;
   }
 
-  return null;
+  return decodeURIComponent(
+    match.substring(name.length + 1)
+  );
 }
 
 
-function isUnsafeMethod(method) {
-  return [
-    "post",
-    "put",
-    "patch",
-    "delete",
-  ].includes(
-    String(method || "get").toLowerCase(),
-  );
+export function setAccessToken(token) {
+  accessToken = token || null;
+}
+
+
+export function getAccessToken() {
+  return accessToken;
 }
 
 
@@ -89,195 +39,139 @@ function extractAccessToken(data) {
   return (
     data?.access ||
     data?.access_token ||
-    data?.tokens?.access ||
     null
   );
 }
 
 
-/*
- * Calls Django's CSRF endpoint.
- *
- * Django will place the CSRF token in a browser cookie.
- */
-export async function ensureCsrfCookie() {
-  const existingToken = getCookie("csrftoken");
+const api = axios.create({
+  baseURL: "/api",
+  withCredentials: true,
+  headers: {
+    Accept: "application/json",
+  },
+});
 
-  if (existingToken) {
-    return existingToken;
+
+api.interceptors.request.use((config) => {
+  if (accessToken) {
+    config.headers.Authorization =
+      `Bearer ${accessToken}`;
   }
 
+  const method = (
+    config.method || "get"
+  ).toLowerCase();
+
+  const unsafeMethods = [
+    "post",
+    "put",
+    "patch",
+    "delete",
+  ];
+
+  if (unsafeMethods.includes(method)) {
+    const csrfToken =
+      readCookie("csrftoken");
+
+    if (csrfToken) {
+      config.headers["X-CSRFToken"] =
+        csrfToken;
+    }
+  }
+
+  return config;
+});
+
+
+export async function ensureCsrfCookie() {
   if (!csrfPromise) {
-    csrfPromise = csrfClient
-      .get("/auth/csrf/")
-      .then((response) => {
-        const cookieToken =
-          getCookie("csrftoken");
-
-        const responseToken =
-          response.data?.csrfToken ||
-          response.data?.csrf_token ||
-          response.data?.token;
-
-        const csrfToken =
-          cookieToken || responseToken;
-
-        if (!csrfToken) {
-          throw new Error(
-            "Django did not create a CSRF cookie.",
-          );
-        }
-
-        return csrfToken;
+    csrfPromise = api
+      .get("/auth/csrf/", {
+        skipAuthRefresh: true,
       })
       .finally(() => {
         csrfPromise = null;
       });
   }
 
-  return csrfPromise;
+  await csrfPromise;
+
+  return readCookie("csrftoken");
 }
 
 
-/*
- * Refresh the short-lived JWT access token.
- *
- * The refresh token remains in the HTTP-only cookie.
- */
 export async function refreshAccessToken() {
   if (!refreshPromise) {
     refreshPromise = (async () => {
-      const csrfToken =
-        await ensureCsrfCookie();
+      await ensureCsrfCookie();
 
-      const response =
-        await refreshClient.post(
-          "/auth/refresh/",
-          {},
-          {
-            headers: {
-              "X-CSRFToken": csrfToken,
-            },
-          },
-        );
+      const response = await api.post(
+        "/auth/refresh/",
+        {},
+        {
+          skipAuthRefresh: true,
+        },
+      );
 
-      const accessToken =
-        extractAccessToken(response.data);
+      const token = extractAccessToken(
+        response.data,
+      );
 
-      if (!accessToken) {
+      if (!token) {
         throw new Error(
           "The refresh response did not contain an access token.",
         );
       }
 
-      setAccessToken(accessToken);
+      setAccessToken(token);
 
-      return accessToken;
-    })()
-      .catch((error) => {
-        clearAccessToken();
-        throw error;
-      })
-      .finally(() => {
-        refreshPromise = null;
-      });
+      return response.data;
+    })().finally(() => {
+      refreshPromise = null;
+    });
   }
 
   return refreshPromise;
 }
 
 
-/*
- * Before every request:
- *
- * 1. Add JWT access token if available.
- * 2. Add CSRF protection for POST, PUT, PATCH and DELETE.
- */
-api.interceptors.request.use(
-  async (config) => {
-    const accessToken =
-      getAccessToken();
-
-    if (accessToken) {
-      config.headers.Authorization =
-        `Bearer ${accessToken}`;
-    }
-
-    if (isUnsafeMethod(config.method)) {
-      const csrfToken =
-        await ensureCsrfCookie();
-
-      config.headers["X-CSRFToken"] =
-        csrfToken;
-    }
-
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
-
-
-/*
- * If an access token expires, refresh it once and retry
- * the original request.
- */
 api.interceptors.response.use(
   (response) => response,
 
   async (error) => {
-    const originalRequest = error.config;
+    const originalRequest =
+      error.config;
+
+    if (!originalRequest) {
+      return Promise.reject(error);
+    }
 
     const isUnauthorized =
       error.response?.status === 401;
 
-    const isRefreshRequest =
-      originalRequest?.url?.includes(
-        "/auth/refresh/",
-      );
+    const refreshDisabled =
+      originalRequest.skipAuthRefresh;
 
-    const isLoginRequest =
-      originalRequest?.url?.includes(
-        "/auth/login/",
-      );
+    const wasRetried =
+      originalRequest._authRetried;
 
     if (
       !isUnauthorized ||
-      !originalRequest ||
-      originalRequest._retry ||
-      isRefreshRequest ||
-      isLoginRequest
+      refreshDisabled ||
+      wasRetried
     ) {
       return Promise.reject(error);
     }
 
-    originalRequest._retry = true;
+    originalRequest._authRetried = true;
 
     try {
-      const accessToken =
-        await refreshAccessToken();
-
-      originalRequest.headers = {
-        ...originalRequest.headers,
-        Authorization:
-          `Bearer ${accessToken}`,
-      };
-
-      if (
-        isUnsafeMethod(
-          originalRequest.method,
-        )
-      ) {
-        const csrfToken =
-          await ensureCsrfCookie();
-
-        originalRequest.headers[
-          "X-CSRFToken"
-        ] = csrfToken;
-      }
+      await refreshAccessToken();
 
       return api(originalRequest);
     } catch (refreshError) {
-      clearAccessToken();
+      setAccessToken(null);
 
       window.dispatchEvent(
         new CustomEvent(
@@ -291,6 +185,56 @@ api.interceptors.response.use(
     }
   },
 );
+
+
+export async function loginRequest(
+  email,
+  password,
+) {
+  await ensureCsrfCookie();
+
+  const response = await api.post(
+    "/auth/login/",
+    {
+      email: email.trim().toLowerCase(),
+      password,
+    },
+    {
+      skipAuthRefresh: true,
+    },
+  );
+
+  const token = extractAccessToken(
+    response.data,
+  );
+
+  if (!token) {
+    throw new Error(
+      "The login response did not contain an access token.",
+    );
+  }
+
+  setAccessToken(token);
+
+  return response.data;
+}
+
+
+export async function logoutRequest() {
+  await ensureCsrfCookie();
+
+  try {
+    await api.post(
+      "/auth/logout/",
+      {},
+      {
+        skipAuthRefresh: true,
+      },
+    );
+  } finally {
+    setAccessToken(null);
+  }
+}
 
 
 export default api;

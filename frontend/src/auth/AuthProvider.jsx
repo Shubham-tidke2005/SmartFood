@@ -1,126 +1,215 @@
 import {
   createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useState,
 } from "react";
 
 import api, {
+  loginRequest,
+  logoutRequest,
   refreshAccessToken,
+  setAccessToken,
 } from "../lib/api";
 
-import {
-  clearAccessToken,
-  setAccessToken,
-} from "./tokenStore";
 
-const AuthContext = createContext(null);
+export const AuthContext =
+  createContext(null);
 
-function normalizeUser(data) {
-  return data?.user || data?.profile || data || null;
+
+export const ROLE_HOME = {
+  DONOR: "/donor/dashboard",
+  RECEIVER: "/receiver/dashboard",
+  VOLUNTEER: "/volunteer/dashboard",
+  ADMIN: "/admin/dashboard",
+};
+
+
+function normalizeProfile(data) {
+  if (!data) {
+    return null;
+  }
+
+  const account =
+    data.user ||
+    data.account ||
+    data;
+
+  return {
+    ...account,
+    profile:
+      data.profile ||
+      account.profile ||
+      null,
+  };
 }
 
-function extractAccessToken(data) {
-  return (
-    data?.access ||
-    data?.access_token ||
-    data?.tokens?.access ||
-    null
-  );
+
+let initialSessionPromise = null;
+
+
+async function restoreInitialSession() {
+  if (!initialSessionPromise) {
+    initialSessionPromise =
+      refreshAccessToken()
+        .then(async (refreshData) => {
+          if (
+            refreshData?.user ||
+            refreshData?.account
+          ) {
+            return normalizeProfile(
+              refreshData,
+            );
+          }
+
+          const profileResponse =
+            await api.get(
+              "/profiles/me/",
+            );
+
+          return normalizeProfile(
+            profileResponse.data,
+          );
+        })
+        .catch(() => {
+          setAccessToken(null);
+          return null;
+        });
+  }
+
+  return initialSessionPromise;
 }
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [isInitializing, setIsInitializing] =
+
+export default function AuthProvider({
+  children,
+}) {
+  const [user, setUser] =
+    useState(null);
+
+  const [initializing, setInitializing] =
     useState(true);
 
-  const loadCurrentUser = useCallback(async () => {
-    const response = await api.get("/profiles/me/");
-    const currentUser = normalizeUser(response.data);
+  const [authError, setAuthError] =
+    useState("");
 
-    setUser(currentUser);
 
-    return currentUser;
-  }, []);
+  const loadProfile =
+    useCallback(async () => {
+      const response = await api.get(
+        "/profiles/me/",
+      );
+
+      const profile =
+        normalizeProfile(
+          response.data,
+        );
+
+      setUser(profile);
+
+      return profile;
+    }, []);
+
 
   const login = useCallback(
-    async (credentials) => {
-      const response = await api.post(
-        "/auth/login/",
-        credentials,
-      );
+    async ({ email, password }) => {
+      setAuthError("");
 
-      const accessToken = extractAccessToken(
-        response.data,
-      );
-
-      if (!accessToken) {
-        throw new Error(
-          "Login succeeded but no access token was returned.",
+      const loginData =
+        await loginRequest(
+          email,
+          password,
         );
+
+      let authenticatedUser =
+        normalizeProfile(
+          loginData.user
+            ? loginData
+            : null,
+        );
+
+      if (!authenticatedUser) {
+        authenticatedUser =
+          await loadProfile();
+      } else {
+        setUser(authenticatedUser);
       }
 
-      setAccessToken(accessToken);
-
-      const returnedUser = normalizeUser(
-        response.data?.user,
-      );
-
-      if (returnedUser) {
-        setUser(returnedUser);
-        return returnedUser;
-      }
-
-      return loadCurrentUser();
+      return authenticatedUser;
     },
-    [loadCurrentUser],
+    [loadProfile],
   );
 
-  const logout = useCallback(async () => {
-    try {
-      await api.post("/auth/logout/", {});
-    } finally {
-      clearAccessToken();
-      setUser(null);
-    }
-  }, []);
+
+  const logout = useCallback(
+    async () => {
+      setAuthError("");
+
+      try {
+        await logoutRequest();
+      } finally {
+        setUser(null);
+        setAccessToken(null);
+        initialSessionPromise = null;
+      }
+    },
+    [],
+  );
+
+
+  const updateProfile =
+    useCallback(async (payload) => {
+      const response = await api.patch(
+        "/profiles/me/",
+        payload,
+      );
+
+      const updatedUser =
+        normalizeProfile(
+          response.data,
+        );
+
+      setUser(updatedUser);
+
+      return updatedUser;
+    }, []);
+
 
   useEffect(() => {
     let active = true;
 
-    async function initializeAuthentication() {
-      try {
-        await refreshAccessToken();
-
+    restoreInitialSession()
+      .then((restoredUser) => {
         if (active) {
-          await loadCurrentUser();
+          setUser(restoredUser);
         }
-      } catch {
-        clearAccessToken();
-
+      })
+      .finally(() => {
         if (active) {
-          setUser(null);
+          setInitializing(false);
         }
-      } finally {
-        if (active) {
-          setIsInitializing(false);
-        }
-      }
-    }
-
-    initializeAuthentication();
+      });
 
     return () => {
       active = false;
     };
-  }, [loadCurrentUser]);
+  }, []);
+
 
   useEffect(() => {
     function handleSessionExpired() {
-      clearAccessToken();
       setUser(null);
+      setAccessToken(null);
+
+      if (
+        window.location.pathname !==
+        "/login"
+      ) {
+        window.location.assign(
+          "/login?reason=session-expired",
+        );
+      }
     }
 
     window.addEventListener(
@@ -136,39 +225,40 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
+
   const value = useMemo(
     () => ({
       user,
+      initializing,
+      authError,
       isAuthenticated: Boolean(user),
-      isInitializing,
       login,
       logout,
-      refreshUser: loadCurrentUser,
+      loadProfile,
+      updateProfile,
+      setAuthError,
     }),
     [
       user,
-      isInitializing,
+      initializing,
+      authError,
       login,
       logout,
-      loadCurrentUser,
+      loadProfile,
+      updateProfile,
     ],
   );
 
+
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={value}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
 
-export function useAuth() {
-  const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error(
-      "useAuth must be used inside AuthProvider.",
-    );
-  }
-
-  return context;
-}
+export {
+  default as useAuth,
+} from "./useAuth";
