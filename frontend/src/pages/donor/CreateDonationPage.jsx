@@ -16,12 +16,17 @@ import {
   useNavigate,
 } from "react-router-dom";
 
+import useAuth from "../../auth/useAuth";
+
 import api from "../../lib/api";
 
 import {
   getApiErrorMessage,
 } from "../../lib/apiError";
 
+import {
+  normalizeList,
+} from "../../hooks/useApiResource";
 
 const UNIT_OPTIONS = [
   {
@@ -42,7 +47,6 @@ const UNIT_OPTIONS = [
   },
 ];
 
-
 const INITIAL_FORM = {
   food_name: "",
   category_id: "",
@@ -58,23 +62,18 @@ const INITIAL_FORM = {
   pickup_deadline: "",
 };
 
-
-function normalizeList(data) {
-  if (Array.isArray(data)) {
-    return data;
-  }
-
-  if (Array.isArray(data?.results)) {
-    return data.results;
-  }
-
-  return [];
-}
-
+const inputClasses =
+  "min-h-12 w-full rounded-xl border border-slate-300 " +
+  "bg-white px-4 py-3 text-slate-900 outline-none transition " +
+  "placeholder:text-slate-400 focus:border-blue-500 " +
+  "focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed " +
+  "disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 " +
+  "dark:text-white dark:disabled:bg-slate-950";
 
 function localDateTimeValue(date) {
   const offset =
-    date.getTimezoneOffset() * 60000;
+    date.getTimezoneOffset() *
+    60000;
 
   return new Date(
     date.getTime() - offset,
@@ -83,15 +82,19 @@ function localDateTimeValue(date) {
     .slice(0, 16);
 }
 
-
 function toIsoString(value) {
   if (!value) {
     return "";
   }
 
-  return new Date(value).toISOString();
-}
+  const date = new Date(value);
 
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toISOString();
+}
 
 function firstFieldMessage(value) {
   if (typeof value === "string") {
@@ -118,7 +121,6 @@ function firstFieldMessage(value) {
   return "";
 }
 
-
 function getBackendFieldErrors(error) {
   const data =
     error?.response?.data;
@@ -137,38 +139,37 @@ function getBackendFieldErrors(error) {
     "error",
   ];
 
-  return Object.entries(data)
-    .filter(
-      ([field]) =>
-        !ignoredFields.includes(field),
-    )
-    .reduce(
-      (errors, [field, value]) => {
-        errors[field] =
-          firstFieldMessage(value);
+  const errors =
+    Object.entries(data)
+      .filter(
+        ([field]) =>
+          !ignoredFields.includes(
+            field,
+          ),
+      )
+      .reduce(
+        (
+          result,
+          [field, value],
+        ) => {
+          result[field] =
+            firstFieldMessage(value);
 
-        return errors;
-      },
-      {},
-    );
-}
+          return result;
+        },
+        {},
+      );
 
-
-function FieldError({ message }) {
-  if (!message) {
-    return null;
+  if (
+    errors.category &&
+    !errors.category_id
+  ) {
+    errors.category_id =
+      errors.category;
   }
 
-  return (
-    <p
-      className="mt-1.5 text-sm text-red-600"
-      role="alert"
-    >
-      {message}
-    </p>
-  );
+  return errors;
 }
-
 
 function FieldLabel({
   children,
@@ -184,8 +185,8 @@ function FieldLabel({
 
       {required && (
         <span
-          className="ml-1 text-red-500"
           aria-hidden="true"
+          className="ml-1 text-red-500"
         >
           *
         </span>
@@ -194,18 +195,133 @@ function FieldLabel({
   );
 }
 
+function FieldError({
+  message,
+}) {
+  if (!message) {
+    return null;
+  }
 
-const inputClasses =
-  "min-h-12 w-full rounded-xl border border-slate-300 " +
-  "bg-white px-4 py-3 text-slate-900 outline-none transition " +
-  "placeholder:text-slate-400 focus:border-blue-500 " +
-  "focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed " +
-  "disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 " +
-  "dark:text-white dark:disabled:bg-slate-950";
+  return (
+    <p
+      role="alert"
+      className="mt-1.5 text-sm text-red-600 dark:text-red-400"
+    >
+      {message}
+    </p>
+  );
+}
 
+function TextField({
+  label,
+  name,
+  type = "text",
+  value,
+  required = false,
+  error,
+  disabled = false,
+  min,
+  max,
+  step,
+  placeholder,
+  onChange,
+}) {
+  return (
+    <div>
+      <FieldLabel
+        htmlFor={name}
+        required={required}
+      >
+        {label}
+      </FieldLabel>
+
+      <input
+        id={name}
+        name={name}
+        type={type}
+        value={value}
+        required={required}
+        disabled={disabled}
+        min={min}
+        max={max}
+        step={step}
+        placeholder={placeholder}
+        aria-invalid={
+          Boolean(error)
+        }
+        aria-describedby={
+          error
+            ? `${name}-error`
+            : undefined
+        }
+        className={`${inputClasses} ${
+          error
+            ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
+            : ""
+        }`}
+        onChange={onChange}
+      />
+
+      <div id={`${name}-error`}>
+        <FieldError
+          message={error}
+        />
+      </div>
+    </div>
+  );
+}
+
+function TextAreaField({
+  label,
+  name,
+  value,
+  required = false,
+  error,
+  disabled = false,
+  placeholder,
+  onChange,
+}) {
+  return (
+    <div>
+      <FieldLabel
+        htmlFor={name}
+        required={required}
+      >
+        {label}
+      </FieldLabel>
+
+      <textarea
+        id={name}
+        name={name}
+        rows={5}
+        value={value}
+        required={required}
+        disabled={disabled}
+        placeholder={placeholder}
+        aria-invalid={
+          Boolean(error)
+        }
+        className={`${inputClasses} resize-y ${
+          error
+            ? "border-red-400 focus:border-red-500 focus:ring-red-500/20"
+            : ""
+        }`}
+        onChange={onChange}
+      />
+
+      <FieldError
+        message={error}
+      />
+    </div>
+  );
+}
 
 export default function CreateDonationPage() {
   const navigate = useNavigate();
+
+  const {
+    user,
+  } = useAuth();
 
   const [form, setForm] =
     useState(INITIAL_FORM);
@@ -227,9 +343,10 @@ export default function CreateDonationPage() {
   const [error, setError] =
     useState("");
 
-  const [fieldErrors, setFieldErrors] =
-    useState({});
-
+  const [
+    fieldErrors,
+    setFieldErrors,
+  ] = useState({});
 
   const selectedCategory =
     useMemo(
@@ -237,11 +354,15 @@ export default function CreateDonationPage() {
         categories.find(
           (category) =>
             String(category.id) ===
-            String(form.category_id),
+            String(
+              form.category_id,
+            ),
         ) || null,
-      [categories, form.category_id],
+      [
+        categories,
+        form.category_id,
+      ],
     );
-
 
   const currentLocalTime =
     useMemo(
@@ -252,6 +373,12 @@ export default function CreateDonationPage() {
       [],
     );
 
+  const cannotCreateDonation =
+    user?.is_active === false ||
+    user?.verification_status !==
+      "VERIFIED" ||
+    user?.role?.toUpperCase() !==
+      "DONOR";
 
   useEffect(() => {
     let active = true;
@@ -261,9 +388,10 @@ export default function CreateDonationPage() {
       setError("");
 
       try {
-        const response = await api.get(
-          "/donations/food-categories/",
-        );
+        const response =
+          await api.get(
+            "/donations/food-categories/",
+          );
 
         if (!active) {
           return;
@@ -274,7 +402,8 @@ export default function CreateDonationPage() {
             response.data,
           ).filter(
             (category) =>
-              category.active !== false,
+              category.active !==
+              false,
           );
 
         setCategories(
@@ -291,7 +420,9 @@ export default function CreateDonationPage() {
         }
       } finally {
         if (active) {
-          setCategoriesLoading(false);
+          setCategoriesLoading(
+            false,
+          );
         }
       }
     }
@@ -303,6 +434,14 @@ export default function CreateDonationPage() {
     };
   }, []);
 
+  function clearFieldError(name) {
+    setFieldErrors(
+      (current) => ({
+        ...current,
+        [name]: "",
+      }),
+    );
+  }
 
   function handleChange(event) {
     const {
@@ -316,15 +455,12 @@ export default function CreateDonationPage() {
     }));
 
     setError("");
-
-    setFieldErrors((current) => ({
-      ...current,
-      [name]: "",
-    }));
+    clearFieldError(name);
   }
 
-
-  function handleCategoryChange(event) {
+  function handleCategoryChange(
+    event,
+  ) {
     const categoryId =
       event.target.value;
 
@@ -337,13 +473,13 @@ export default function CreateDonationPage() {
 
     setForm((current) => ({
       ...current,
-      category_id: categoryId,
-
+      category_id:
+        categoryId,
       prepared_at:
-        category?.requires_preparation_time
+        category
+          ?.requires_preparation_time
           ? current.prepared_at
           : "",
-
       use_by_at:
         category?.requires_use_by
           ? current.use_by_at
@@ -352,37 +488,39 @@ export default function CreateDonationPage() {
 
     setError("");
 
-    setFieldErrors((current) => ({
-      ...current,
-      category_id: "",
-      prepared_at: "",
-      use_by_at: "",
-    }));
+    setFieldErrors(
+      (current) => ({
+        ...current,
+        category_id: "",
+        prepared_at: "",
+        use_by_at: "",
+      }),
+    );
   }
 
-
-  function handleImageChange(event) {
+  function handleImageChange(
+    event,
+  ) {
     const selectedFiles =
       Array.from(
         event.target.files || [],
       );
 
     setError("");
-    setFieldErrors((current) => ({
-      ...current,
-      images: "",
-    }));
+    clearFieldError("images");
 
     if (
       images.length +
         selectedFiles.length >
       5
     ) {
-      setFieldErrors((current) => ({
-        ...current,
-        images:
-          "A donation can contain a maximum of five images.",
-      }));
+      setFieldErrors(
+        (current) => ({
+          ...current,
+          images:
+            "A donation can contain a maximum of five images.",
+        }),
+      );
 
       event.target.value = "";
       return;
@@ -399,11 +537,13 @@ export default function CreateDonationPage() {
       );
 
     if (invalidFile) {
-      setFieldErrors((current) => ({
-        ...current,
-        images:
-          "Images must be JPEG, PNG or WebP files.",
-      }));
+      setFieldErrors(
+        (current) => ({
+          ...current,
+          images:
+            "Images must be JPEG, PNG or WebP files.",
+        }),
+      );
 
       event.target.value = "";
       return;
@@ -417,11 +557,13 @@ export default function CreateDonationPage() {
       );
 
     if (oversizedFile) {
-      setFieldErrors((current) => ({
-        ...current,
-        images:
-          "Each image must be 5 MB or smaller.",
-      }));
+      setFieldErrors(
+        (current) => ({
+          ...current,
+          images:
+            "Each image must be 5 MB or smaller.",
+        }),
+      );
 
       event.target.value = "";
       return;
@@ -435,7 +577,6 @@ export default function CreateDonationPage() {
     event.target.value = "";
   }
 
-
   function removeImage(index) {
     setImages((current) =>
       current.filter(
@@ -444,7 +585,6 @@ export default function CreateDonationPage() {
       ),
     );
   }
-
 
   function validateForm() {
     const errors = {};
@@ -472,9 +612,10 @@ export default function CreateDonationPage() {
     }
 
     if (
-      ["PORTION", "PACKAGE"].includes(
-        form.unit,
-      ) &&
+      [
+        "PORTION",
+        "PACKAGE",
+      ].includes(form.unit) &&
       !Number.isInteger(quantity)
     ) {
       errors.quantity =
@@ -493,7 +634,9 @@ export default function CreateDonationPage() {
         "Pickup area is required.";
     }
 
-    if (!form.pickup_address.trim()) {
+    if (
+      !form.pickup_address.trim()
+    ) {
       errors.pickup_address =
         "Pickup address is required.";
     }
@@ -506,6 +649,16 @@ export default function CreateDonationPage() {
     if (!form.pickup_deadline) {
       errors.pickup_deadline =
         "Pickup deadline is required.";
+    }
+
+    if (
+      form.pickup_starts_at &&
+      new Date(
+        form.pickup_starts_at,
+      ) <= new Date()
+    ) {
+      errors.pickup_starts_at =
+        "Pickup start time must be in the future.";
     }
 
     if (
@@ -583,20 +736,36 @@ export default function CreateDonationPage() {
     setFieldErrors(errors);
 
     return (
-      Object.keys(errors).length === 0
+      Object.keys(errors).length ===
+      0
     );
   }
 
-
-  async function handleSubmit(event) {
+  async function handleSubmit(
+    event,
+  ) {
     event.preventDefault();
 
     setError("");
+
+    if (cannotCreateDonation) {
+      setError(
+        "Only active and verified donor accounts can create donations.",
+      );
+
+      return;
+    }
 
     if (!validateForm()) {
       setError(
         "Review the highlighted fields before creating the donation.",
       );
+
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+
       return;
     }
 
@@ -685,14 +854,16 @@ export default function CreateDonationPage() {
         );
       });
 
-      const response = await api.post(
-        "/donations/",
-        payload,
-      );
+      const response =
+        await api.post(
+          "/donations/",
+          payload,
+        );
 
       const donationId =
         response.data?.id ||
-        response.data?.donation?.id;
+        response.data
+          ?.donation?.id;
 
       if (!donationId) {
         throw new Error(
@@ -733,29 +904,89 @@ export default function CreateDonationPage() {
     }
   }
 
+  if (cannotCreateDonation) {
+    return (
+      <div className="mx-auto max-w-3xl">
+        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 text-amber-800 shadow-sm dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+          <div className="flex items-start gap-3">
+            <AlertCircle
+              aria-hidden="true"
+              className="mt-0.5 size-6 shrink-0"
+            />
+
+            <div>
+              <h1 className="text-xl font-black">
+                Donation creation unavailable
+              </h1>
+
+              <p className="mt-2 leading-7">
+                Only active, verified donor
+                accounts can create donation
+                listings.
+              </p>
+
+              <div className="mt-4 space-y-1 text-sm">
+                <p>
+                  Role:{" "}
+                  {user?.role ||
+                    "Unknown"}
+                </p>
+
+                <p>
+                  Verification status:{" "}
+                  {user
+                    ?.verification_status ||
+                    "PENDING"}
+                </p>
+
+                <p>
+                  Account status:{" "}
+                  {user?.is_active ===
+                  false
+                    ? "SUSPENDED"
+                    : "ACTIVE"}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  navigate(
+                    "/dashboard",
+                  )
+                }
+                className="mt-5 min-h-11 rounded-xl bg-blue-600 px-5 py-2.5 font-semibold text-white transition hover:bg-blue-700 active:scale-[0.98]"
+              >
+                Return to dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (categoriesLoading) {
     return (
       <div
-        className="flex min-h-72 items-center justify-center"
         role="status"
+        className="flex min-h-72 items-center justify-center"
       >
         <div className="text-center">
-          <LoaderCircle className="mx-auto h-9 w-9 animate-spin text-blue-600" />
+          <LoaderCircle className="mx-auto size-9 animate-spin text-blue-600" />
 
-          <p className="mt-3 text-sm text-slate-500">
-            Loading donation form…
+          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+            Loading donation form...
           </p>
         </div>
       </div>
     );
   }
 
-
   return (
     <div className="mx-auto max-w-4xl">
       <header className="mb-7">
-        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
+        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600 dark:text-blue-400">
           Donor
         </p>
 
@@ -764,67 +995,64 @@ export default function CreateDonationPage() {
         </h1>
 
         <p className="mt-2 max-w-2xl text-slate-500 dark:text-slate-400">
-          Provide accurate food and pickup information so a suitable receiver can respond in time.
+          Provide accurate food and pickup
+          information so a suitable receiver
+          can respond in time.
         </p>
       </header>
 
       {error && (
         <div
-          className="mb-6 flex gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
           role="alert"
+          className="mb-6 flex gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300"
         >
-          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+          <AlertCircle
+            aria-hidden="true"
+            className="mt-0.5 size-5 shrink-0"
+          />
 
-          <p>{error}</p>
+          <span>{error}</span>
         </div>
       )}
 
       <form
-        onSubmit={handleSubmit}
-        encType="multipart/form-data"
         className="space-y-6"
-        noValidate
+        onSubmit={handleSubmit}
       >
         <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-700/60 dark:bg-slate-800 sm:p-6">
-          <div className="mb-6 flex items-center gap-3 border-b border-slate-200 pb-5 dark:border-slate-700">
-            <span className="grid h-11 w-11 place-items-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/40">
-              <PackagePlus className="h-6 w-6" />
-            </span>
+          <div className="flex items-center gap-3 border-b border-slate-200 pb-5 dark:border-slate-700">
+            <div className="flex size-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-600 dark:bg-blue-950 dark:text-blue-300">
+              <PackagePlus
+                aria-hidden="true"
+                className="size-6"
+              />
+            </div>
 
             <div>
-              <h2 className="font-semibold text-slate-900 dark:text-white">
+              <h2 className="text-xl font-black text-slate-950 dark:text-white">
                 Food details
               </h2>
 
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Describe the complete donation batch.
+                Describe the complete
+                donation batch.
               </p>
             </div>
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2">
+          <div className="mt-6 grid gap-5 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <FieldLabel
-                htmlFor="food_name"
-                required
-              >
-                Food name
-              </FieldLabel>
-
-              <input
-                id="food_name"
+              <TextField
+                label="Food name"
                 name="food_name"
+                required
                 value={form.food_name}
-                onChange={handleChange}
-                className={inputClasses}
-                placeholder="Example: Vegetable rice meals"
-                disabled={submitting}
-              />
-
-              <FieldError
-                message={
+                error={
                   fieldErrors.food_name
                 }
+                disabled={submitting}
+                placeholder="Example: Vegetable rice meals"
+                onChange={handleChange}
               />
             </div>
 
@@ -839,12 +1067,22 @@ export default function CreateDonationPage() {
               <select
                 id="category_id"
                 name="category_id"
-                value={form.category_id}
+                required
+                value={
+                  form.category_id
+                }
+                disabled={submitting}
+                aria-invalid={Boolean(
+                  fieldErrors.category_id,
+                )}
+                className={`${inputClasses} ${
+                  fieldErrors.category_id
+                    ? "border-red-400"
+                    : ""
+                }`}
                 onChange={
                   handleCategoryChange
                 }
-                className={inputClasses}
-                disabled={submitting}
               >
                 <option value="">
                   Select category
@@ -869,32 +1107,21 @@ export default function CreateDonationPage() {
               />
             </div>
 
-            <div className="grid grid-cols-[1fr_150px] gap-3">
-              <div>
-                <FieldLabel
-                  htmlFor="quantity"
-                  required
-                >
-                  Quantity
-                </FieldLabel>
-
-                <input
-                  id="quantity"
-                  name="quantity"
-                  type="number"
-                  min="0.001"
-                  step={
-                    ["PORTION", "PACKAGE"]
-                      .includes(form.unit)
-                      ? "1"
-                      : "0.001"
-                  }
-                  value={form.quantity}
-                  onChange={handleChange}
-                  className={inputClasses}
-                  disabled={submitting}
-                />
-              </div>
+            <div className="grid grid-cols-[1fr_10rem] gap-3">
+              <TextField
+                label="Quantity"
+                name="quantity"
+                type="number"
+                required
+                min="0.01"
+                step="0.01"
+                value={form.quantity}
+                error={
+                  fieldErrors.quantity
+                }
+                disabled={submitting}
+                onChange={handleChange}
+              />
 
               <div>
                 <FieldLabel
@@ -908,360 +1135,322 @@ export default function CreateDonationPage() {
                   id="unit"
                   name="unit"
                   value={form.unit}
-                  onChange={handleChange}
-                  className={inputClasses}
                   disabled={submitting}
+                  className={
+                    inputClasses
+                  }
+                  onChange={
+                    handleChange
+                  }
                 >
                   {UNIT_OPTIONS.map(
-                    (unit) => (
+                    (option) => (
                       <option
-                        key={unit.value}
-                        value={unit.value}
+                        key={
+                          option.value
+                        }
+                        value={
+                          option.value
+                        }
                       >
-                        {unit.label}
+                        {option.label}
                       </option>
                     ),
                   )}
                 </select>
               </div>
-
-              <div className="col-span-2">
-                <FieldError
-                  message={
-                    fieldErrors.quantity ||
-                    fieldErrors.unit
-                  }
-                />
-              </div>
             </div>
 
             <div className="sm:col-span-2">
-              <FieldLabel htmlFor="description">
-                Description
-              </FieldLabel>
-
-              <textarea
-                id="description"
+              <TextAreaField
+                label="Description"
                 name="description"
-                rows="4"
-                value={form.description}
-                onChange={handleChange}
-                className={inputClasses}
-                placeholder="Packaging, ingredients, allergens or handling information"
-                disabled={submitting}
-              />
-
-              <FieldError
-                message={
+                value={
+                  form.description
+                }
+                error={
                   fieldErrors.description
                 }
+                disabled={submitting}
+                placeholder="Packaging, ingredients, dietary details or handling information"
+                onChange={handleChange}
               />
             </div>
 
             <div className="sm:col-span-2">
-              <FieldLabel
-                htmlFor="storage_condition"
-                required
-              >
-                Storage condition
-              </FieldLabel>
-
-              <input
-                id="storage_condition"
+              <TextAreaField
+                label="Storage condition"
                 name="storage_condition"
+                required
                 value={
                   form.storage_condition
                 }
-                onChange={handleChange}
-                className={inputClasses}
-                placeholder="Example: Refrigerated"
-                disabled={submitting}
-              />
-
-              <FieldError
-                message={
+                error={
                   fieldErrors
                     .storage_condition
                 }
+                disabled={submitting}
+                placeholder="Example: Keep refrigerated below 5°C"
+                onChange={handleChange}
               />
             </div>
-
-            {selectedCategory
-              ?.requires_preparation_time && (
-              <div>
-                <FieldLabel
-                  htmlFor="prepared_at"
-                  required
-                >
-                  Prepared at
-                </FieldLabel>
-
-                <input
-                  id="prepared_at"
-                  name="prepared_at"
-                  type="datetime-local"
-                  max={currentLocalTime}
-                  value={form.prepared_at}
-                  onChange={handleChange}
-                  className={inputClasses}
-                  disabled={submitting}
-                />
-
-                <FieldError
-                  message={
-                    fieldErrors.prepared_at
-                  }
-                />
-              </div>
-            )}
-
-            {selectedCategory
-              ?.requires_use_by && (
-              <div>
-                <FieldLabel
-                  htmlFor="use_by_at"
-                  required
-                >
-                  Use by
-                </FieldLabel>
-
-                <input
-                  id="use_by_at"
-                  name="use_by_at"
-                  type="datetime-local"
-                  min={currentLocalTime}
-                  value={form.use_by_at}
-                  onChange={handleChange}
-                  className={inputClasses}
-                  disabled={submitting}
-                />
-
-                <FieldError
-                  message={
-                    fieldErrors.use_by_at
-                  }
-                />
-              </div>
-            )}
           </div>
         </section>
 
         <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-700/60 dark:bg-slate-800 sm:p-6">
-          <h2 className="font-semibold text-slate-900 dark:text-white">
+          <h2 className="text-xl font-black text-slate-950 dark:text-white">
+            Preparation and use-by information
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Required fields depend on the
+            selected food category.
+          </p>
+
+          <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <TextField
+              label="Prepared at"
+              name="prepared_at"
+              type="datetime-local"
+              required={
+                Boolean(
+                  selectedCategory
+                    ?.requires_preparation_time,
+                )
+              }
+              max={currentLocalTime}
+              value={form.prepared_at}
+              error={
+                fieldErrors.prepared_at
+              }
+              disabled={
+                submitting ||
+                !selectedCategory
+                  ?.requires_preparation_time
+              }
+              onChange={handleChange}
+            />
+
+            <TextField
+              label="Use by"
+              name="use_by_at"
+              type="datetime-local"
+              required={
+                Boolean(
+                  selectedCategory
+                    ?.requires_use_by,
+                )
+              }
+              min={currentLocalTime}
+              value={form.use_by_at}
+              error={
+                fieldErrors.use_by_at
+              }
+              disabled={
+                submitting ||
+                !selectedCategory
+                  ?.requires_use_by
+              }
+              onChange={handleChange}
+            />
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-700/60 dark:bg-slate-800 sm:p-6">
+          <h2 className="text-xl font-black text-slate-950 dark:text-white">
             Pickup information
           </h2>
 
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Exact addresses are shown only where operationally necessary.
+            Provide the collection location
+            and available pickup window.
           </p>
 
           <div className="mt-6 grid gap-5 sm:grid-cols-2">
-            <div>
-              <FieldLabel
-                htmlFor="pickup_area"
-                required
-              >
-                Pickup area
-              </FieldLabel>
+            <TextField
+              label="Pickup area"
+              name="pickup_area"
+              required
+              value={
+                form.pickup_area
+              }
+              error={
+                fieldErrors.pickup_area
+              }
+              disabled={submitting}
+              placeholder="Example: College Road, Nashik"
+              onChange={handleChange}
+            />
 
-              <input
-                id="pickup_area"
-                name="pickup_area"
-                value={form.pickup_area}
-                onChange={handleChange}
-                className={inputClasses}
-                placeholder="Example: College Road"
-                disabled={submitting}
-              />
+            <TextField
+              label="Pickup address"
+              name="pickup_address"
+              required
+              value={
+                form.pickup_address
+              }
+              error={
+                fieldErrors
+                  .pickup_address
+              }
+              disabled={submitting}
+              placeholder="Building, street and landmark"
+              onChange={handleChange}
+            />
 
-              <FieldError
-                message={
-                  fieldErrors.pickup_area
-                }
-              />
-            </div>
+            <TextField
+              label="Pickup starts at"
+              name="pickup_starts_at"
+              type="datetime-local"
+              required
+              min={currentLocalTime}
+              value={
+                form.pickup_starts_at
+              }
+              error={
+                fieldErrors
+                  .pickup_starts_at
+              }
+              disabled={submitting}
+              onChange={handleChange}
+            />
 
-            <div className="sm:col-span-2">
-              <FieldLabel
-                htmlFor="pickup_address"
-                required
-              >
-                Complete pickup address
-              </FieldLabel>
-
-              <textarea
-                id="pickup_address"
-                name="pickup_address"
-                rows="3"
-                value={
-                  form.pickup_address
-                }
-                onChange={handleChange}
-                className={inputClasses}
-                disabled={submitting}
-              />
-
-              <FieldError
-                message={
-                  fieldErrors.pickup_address
-                }
-              />
-            </div>
-
-            <div>
-              <FieldLabel
-                htmlFor="pickup_starts_at"
-                required
-              >
-                Pickup starts
-              </FieldLabel>
-
-              <input
-                id="pickup_starts_at"
-                name="pickup_starts_at"
-                type="datetime-local"
-                min={currentLocalTime}
-                value={
-                  form.pickup_starts_at
-                }
-                onChange={handleChange}
-                className={inputClasses}
-                disabled={submitting}
-              />
-
-              <FieldError
-                message={
-                  fieldErrors
-                    .pickup_starts_at
-                }
-              />
-            </div>
-
-            <div>
-              <FieldLabel
-                htmlFor="pickup_deadline"
-                required
-              >
-                Pickup deadline
-              </FieldLabel>
-
-              <input
-                id="pickup_deadline"
-                name="pickup_deadline"
-                type="datetime-local"
-                min={
-                  form.pickup_starts_at ||
-                  currentLocalTime
-                }
-                value={
-                  form.pickup_deadline
-                }
-                onChange={handleChange}
-                className={inputClasses}
-                disabled={submitting}
-              />
-
-              <FieldError
-                message={
-                  fieldErrors
-                    .pickup_deadline
-                }
-              />
-            </div>
+            <TextField
+              label="Pickup deadline"
+              name="pickup_deadline"
+              type="datetime-local"
+              required
+              min={
+                form.pickup_starts_at ||
+                currentLocalTime
+              }
+              value={
+                form.pickup_deadline
+              }
+              error={
+                fieldErrors
+                  .pickup_deadline
+              }
+              disabled={submitting}
+              onChange={handleChange}
+            />
           </div>
         </section>
 
         <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-700/60 dark:bg-slate-800 sm:p-6">
-          <h2 className="font-semibold text-slate-900 dark:text-white">
-            Donation images
-          </h2>
+          <div className="flex items-center gap-3">
+            <div className="flex size-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-600 dark:bg-sky-950 dark:text-sky-300">
+              <ImagePlus
+                aria-hidden="true"
+                className="size-5"
+              />
+            </div>
 
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Optional. Add up to five JPEG, PNG or WebP images. Maximum 5 MB each.
-          </p>
+            <div>
+              <h2 className="text-xl font-black text-slate-950 dark:text-white">
+                Donation images
+              </h2>
 
-          <label className="mt-5 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-5 py-6 text-center transition hover:border-blue-400 hover:bg-blue-50 focus-within:ring-2 focus-within:ring-blue-500 dark:border-slate-600 dark:bg-slate-900/50">
-            <ImagePlus className="h-8 w-8 text-blue-600" />
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Optional. Maximum five JPEG,
+                PNG or WebP files.
+              </p>
+            </div>
+          </div>
 
-            <span className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
-              Select donation images
-            </span>
+          <div className="mt-6">
+            <label
+              htmlFor="images"
+              className="focus-ring flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 p-8 text-center transition hover:border-blue-400 hover:bg-blue-50/40 dark:border-slate-600 dark:hover:border-blue-500 dark:hover:bg-blue-950/20"
+            >
+              <ImagePlus
+                aria-hidden="true"
+                className="size-8 text-blue-600"
+              />
 
-            <span className="mt-1 text-xs text-slate-500">
-              {images.length}/5 selected
-            </span>
+              <span className="mt-3 font-semibold text-slate-700 dark:text-slate-200">
+                Select donation images
+              </span>
+
+              <span className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Each image must be 5 MB or
+                smaller
+              </span>
+            </label>
 
             <input
+              id="images"
               type="file"
               accept="image/jpeg,image/png,image/webp"
               multiple
-              onChange={handleImageChange}
+              disabled={submitting}
               className="sr-only"
-              disabled={
-                submitting ||
-                images.length >= 5
+              onChange={
+                handleImageChange
               }
             />
-          </label>
 
-          <FieldError
-            message={fieldErrors.images}
-          />
+            <FieldError
+              message={
+                fieldErrors.images
+              }
+            />
 
-          {images.length > 0 && (
-            <ul className="mt-4 space-y-2">
-              {images.map(
-                (image, index) => (
-                  <li
-                    key={
-                      image.name +
-                      image.lastModified
-                    }
-                    className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-700"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {image.name}
-                      </p>
-
-                      <p className="text-xs text-slate-500">
-                        {(
-                          image.size /
-                          1024 /
-                          1024
-                        ).toFixed(2)}{" "}
-                        MB
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        removeImage(index)
-                      }
-                      className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-red-600 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 dark:hover:bg-red-950/30"
-                      aria-label={`Remove ${image.name}`}
-                      disabled={submitting}
+            {images.length > 0 && (
+              <ul className="mt-4 space-y-2">
+                {images.map(
+                  (image, index) => (
+                    <li
+                      key={`${image.name}-${image.lastModified}-${index}`}
+                      className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 p-3 dark:border-slate-700"
                     >
-                      <Trash2 className="h-5 w-5" />
-                    </button>
-                  </li>
-                ),
-              )}
-            </ul>
-          )}
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-slate-800 dark:text-slate-200">
+                          {image.name}
+                        </p>
+
+                        <p className="text-xs text-slate-500">
+                          {(
+                            image.size /
+                            1024 /
+                            1024
+                          ).toFixed(2)}{" "}
+                          MB
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        aria-label={`Remove ${image.name}`}
+                        disabled={submitting}
+                        className="flex size-10 shrink-0 items-center justify-center rounded-xl text-red-600 transition hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-50 dark:hover:bg-red-950/30"
+                        onClick={() =>
+                          removeImage(
+                            index,
+                          )
+                        }
+                      >
+                        <Trash2
+                          aria-hidden="true"
+                          className="size-5"
+                        />
+                      </button>
+                    </li>
+                  ),
+                )}
+              </ul>
+            )}
+          </div>
         </section>
 
-        <div className="sticky bottom-4 flex flex-col-reverse gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-xl backdrop-blur-md dark:border-slate-700/60 dark:bg-slate-900/90 sm:flex-row sm:justify-end">
+        <div className="flex flex-col-reverse gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-slate-700/60 dark:bg-slate-800 sm:flex-row sm:justify-end">
           <button
             type="button"
-            onClick={() =>
-              navigate(
-                "/donor/dashboard",
-              )
-            }
             disabled={submitting}
-            className="min-h-11 rounded-xl border border-slate-300 px-5 py-2.5 font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98] disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            className="min-h-11 rounded-xl border border-slate-300 px-5 py-2.5 font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.98] disabled:opacity-60 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+            onClick={() =>
+              navigate("/dashboard")
+            }
           >
             Cancel
           </button>
@@ -1272,13 +1461,19 @@ export default function CreateDonationPage() {
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 font-semibold text-white transition hover:bg-blue-700 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? (
-              <LoaderCircle className="h-5 w-5 animate-spin" />
+              <LoaderCircle
+                aria-hidden="true"
+                className="size-5 animate-spin"
+              />
             ) : (
-              <PackagePlus className="h-5 w-5" />
+              <PackagePlus
+                aria-hidden="true"
+                className="size-5"
+              />
             )}
 
             {submitting
-              ? "Creating donation…"
+              ? "Creating donation..."
               : "Create donation"}
           </button>
         </div>

@@ -5,23 +5,67 @@ import {
 } from "react";
 
 import api from "../lib/api";
-import { getApiErrorMessage } from "../lib/apiError";
+import {
+  getApiErrorMessage,
+} from "../lib/apiError";
 
-export function normalizeList(data) {
+const LIST_KEYS = [
+  "results",
+  "items",
+  "data",
+  "donations",
+  "requirements",
+  "requests",
+  "tasks",
+  "notifications",
+  "users",
+  "complaints",
+  "recommendations",
+  "records",
+];
+
+export function normalizeList(
+  data,
+  visited = new Set(),
+) {
   if (Array.isArray(data)) {
     return data;
   }
 
-  if (Array.isArray(data?.results)) {
-    return data.results;
+  if (
+    !data ||
+    typeof data !== "object"
+  ) {
+    return [];
   }
 
-  if (Array.isArray(data?.data)) {
-    return data.data;
+  if (visited.has(data)) {
+    return [];
   }
 
-  if (Array.isArray(data?.items)) {
-    return data.items;
+  visited.add(data);
+
+  for (const key of LIST_KEYS) {
+    const value = data[key];
+
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (
+      value &&
+      typeof value === "object"
+    ) {
+      const nestedItems =
+        normalizeList(
+          value,
+          visited,
+        );
+
+      if (nestedItems.length) {
+        return nestedItems;
+      }
+    }
   }
 
   return [];
@@ -32,48 +76,74 @@ export function useApiResource(
   {
     enabled = true,
     list = false,
+    initialData,
   } = {},
 ) {
-  const [data, setData] = useState(
-    list ? [] : null,
-  );
+  const defaultData =
+    initialData !== undefined
+      ? initialData
+      : list
+        ? []
+        : null;
+
+  const [data, setData] =
+    useState(defaultData);
 
   const [loading, setLoading] =
-    useState(enabled);
+    useState(
+      Boolean(
+        enabled &&
+        endpoint,
+      ),
+    );
 
   const [error, setError] =
     useState("");
 
-  const reload = useCallback(async () => {
-    if (!enabled || !endpoint) {
-      setLoading(false);
-      return null;
-    }
+  const reload =
+    useCallback(async () => {
+      if (!enabled || !endpoint) {
+        setLoading(false);
 
-    setLoading(true);
-    setError("");
+        return list
+          ? []
+          : null;
+      }
 
-    try {
-      const response =
-        await api.get(endpoint);
+      setLoading(true);
+      setError("");
 
-      const responseData = list
-        ? normalizeList(response.data)
-        : response.data;
+      try {
+        const response =
+          await api.get(endpoint);
 
-      setData(responseData);
+        const responseData =
+          list
+            ? normalizeList(
+                response.data,
+              )
+            : response.data;
 
-      return responseData;
-    } catch (requestError) {
-      setError(
-        getApiErrorMessage(requestError),
-      );
+        setData(responseData);
 
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [enabled, endpoint, list]);
+        return responseData;
+      } catch (requestError) {
+        const message =
+          getApiErrorMessage(
+            requestError,
+          );
+
+        setError(message);
+
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    }, [
+      enabled,
+      endpoint,
+      list,
+    ]);
 
   useEffect(() => {
     reload();

@@ -41,6 +41,26 @@ import {
 import StatusBadge from "../../components/ui/StatusBadge";
 
 
+const UNIT_OPTIONS = [
+  {
+    value: "PORTION",
+    label: "Portions / Meals",
+  },
+  {
+    value: "KG",
+    label: "Kilograms",
+  },
+  {
+    value: "LITRE",
+    label: "Litres",
+  },
+  {
+    value: "PACKAGE",
+    label: "Packages",
+  },
+];
+
+
 export function BrowseDonationsPage() {
   const [category, setCategory] =
     useState("");
@@ -62,9 +82,9 @@ export function BrowseDonationsPage() {
       new URLSearchParams();
 
     /*
-     * Do not add status=AVAILABLE.
-     * The backend automatically limits receiver discovery
-     * to eligible available donations.
+     * Do not send status=AVAILABLE here.
+     * The backend automatically restricts receiver
+     * discovery to eligible available donations.
      */
     parameters.set(
       "ordering",
@@ -116,10 +136,13 @@ export function BrowseDonationsPage() {
               All categories
             </option>
 
-            {categories.map(
+            {(categories || []).map(
               (categoryItem) => (
                 <option
-                  key={categoryItem.id}
+                  key={
+                    categoryItem.id ||
+                    categoryItem.code
+                  }
                   value={
                     categoryItem.id ||
                     categoryItem.code
@@ -223,8 +246,10 @@ export function ReceiverDonationDetailPage() {
   const [actionError, setActionError] =
     useState("");
 
-  const [successMessage, setSuccessMessage] =
-    useState("");
+  const [
+    successMessage,
+    setSuccessMessage,
+  ] = useState("");
 
   async function requestDonation() {
     if (!note.trim()) {
@@ -287,9 +312,7 @@ export function ReceiverDonationDetailPage() {
           data?.title ||
           "Donation"
         }
-        description={
-          data?.description
-        }
+        description={data?.description}
         action={
           data?.status && (
             <StatusBadge
@@ -481,15 +504,17 @@ export function ReceiverRequirementsPage() {
   const [form, setForm] = useState({
     category: "",
     quantity_needed: "",
-    unit: "MEALS",
+    unit: "PORTION",
     needed_until: "",
   });
 
   const [submitError, setSubmitError] =
     useState("");
 
-  const [successMessage, setSuccessMessage] =
-    useState("");
+  const [
+    successMessage,
+    setSuccessMessage,
+  ] = useState("");
 
   const [submitting, setSubmitting] =
     useState(false);
@@ -534,17 +559,20 @@ export function ReceiverRequirementsPage() {
 
     try {
       await api.post(
-        "/receivers/requirements/",
-        {
-          ...form,
-          quantity_needed: quantity,
-        },
-      );
+  "/receivers/requirements/",
+  {
+    category_id: form.category,
+    quantity_needed: quantity,
+    unit: form.unit,
+    needed_until:
+      form.needed_until,
+  },
+);
 
       setForm({
         category: "",
         quantity_needed: "",
-        unit: "MEALS",
+        unit: "PORTION",
         needed_until: "",
       });
 
@@ -609,10 +637,13 @@ export function ReceiverRequirementsPage() {
                 Select category
               </option>
 
-              {categories.map(
+              {(categories || []).map(
                 (categoryItem) => (
                   <option
-                    key={categoryItem.id}
+                    key={
+                      categoryItem.id ||
+                      categoryItem.code
+                    }
                     value={
                       categoryItem.id ||
                       categoryItem.code
@@ -628,8 +659,8 @@ export function ReceiverRequirementsPage() {
               label="Quantity needed"
               name="quantity_needed"
               type="number"
-              min="0.01"
-              step="0.01"
+              min="0.001"
+              step="0.001"
               required
               value={
                 form.quantity_needed
@@ -646,27 +677,22 @@ export function ReceiverRequirementsPage() {
               disabled={submitting}
               onChange={updateField}
             >
-              <option value="MEALS">
-                Meals
-              </option>
-              <option value="KG">
-                Kilograms
-              </option>
-              <option value="LITRES">
-                Litres
-              </option>
-              <option value="PACKETS">
-                Packets
-              </option>
-              <option value="PIECES">
-                Pieces
-              </option>
+              {UNIT_OPTIONS.map(
+                (unitOption) => (
+                  <option
+                    key={unitOption.value}
+                    value={unitOption.value}
+                  >
+                    {unitOption.label}
+                  </option>
+                ),
+              )}
             </Select>
 
             <Input
               label="Needed until"
               name="needed_until"
-              type="datetime-local"
+              type="date"
               required
               value={form.needed_until}
               disabled={submitting}
@@ -734,11 +760,12 @@ export function ReceiverRequestsPage() {
 
 export function ReceiptConfirmationPage() {
   const { donationId } = useParams();
+
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
     accepted_quantity: "",
-    unit: "MEALS",
+    unit: "PORTION",
     discrepancy_type: "NONE",
     discrepancy_notes: "",
     received_at: toLocalDateTimeValue(
@@ -877,21 +904,16 @@ export function ReceiptConfirmationPage() {
               disabled={submitting}
               onChange={updateField}
             >
-              <option value="MEALS">
-                Meals
-              </option>
-              <option value="KG">
-                Kilograms
-              </option>
-              <option value="LITRES">
-                Litres
-              </option>
-              <option value="PACKETS">
-                Packets
-              </option>
-              <option value="PIECES">
-                Pieces
-              </option>
+              {UNIT_OPTIONS.map(
+                (unitOption) => (
+                  <option
+                    key={unitOption.value}
+                    value={unitOption.value}
+                  >
+                    {unitOption.label}
+                  </option>
+                ),
+              )}
             </Select>
           </div>
 
@@ -917,18 +939,23 @@ export function ReceiptConfirmationPage() {
             <option value="NONE">
               No discrepancy
             </option>
+
             <option value="SHORTAGE">
               Quantity shortage
             </option>
+
             <option value="DAMAGE">
               Damaged food or packaging
             </option>
+
             <option value="QUALITY">
               Quality concern
             </option>
+
             <option value="WRONG_ITEM">
               Wrong food item
             </option>
+
             <option value="OTHER">
               Other
             </option>

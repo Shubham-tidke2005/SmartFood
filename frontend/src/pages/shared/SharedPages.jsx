@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 
 import {
+  useEffect,
   useState,
 } from "react";
 
@@ -13,18 +14,15 @@ import {
   useNavigate,
 } from "react-router-dom";
 
-import api from "../../lib/api";
-import {
-  getApiErrorMessage,
-} from "../../lib/apiError";
-
+import useAuth from "../../auth/useAuth";
 import {
   useApiResource,
 } from "../../hooks/useApiResource";
 
+import api from "../../lib/api";
 import {
-  useAuth,
-} from "../../auth/AuthProvider";
+  getApiErrorMessage,
+} from "../../lib/apiError";
 
 import Button from "../../components/ui/Button";
 
@@ -47,7 +45,6 @@ import {
 
 import StatusBadge from "../../components/ui/StatusBadge";
 
-
 export function RegistrationPage() {
   const navigate = useNavigate();
 
@@ -67,11 +64,15 @@ export function RegistrationPage() {
     useState(false);
 
   function updateField(event) {
-    setForm({
-      ...form,
-      [event.target.name]:
-        event.target.value,
-    });
+    const {
+      name,
+      value,
+    } = event.target;
+
+    setForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
 
     setError("");
   }
@@ -99,18 +100,17 @@ export function RegistrationPage() {
         form,
       );
 
-      navigate(
-        "/login",
-        {
-          replace: true,
-          state: {
-            registrationSuccess: true,
-          },
+      navigate("/login", {
+        replace: true,
+        state: {
+          registrationSuccess: true,
         },
-      );
+      });
     } catch (requestError) {
       setError(
-        getApiErrorMessage(requestError),
+        getApiErrorMessage(
+          requestError,
+        ),
       );
     } finally {
       setSubmitting(false);
@@ -124,7 +124,9 @@ export function RegistrationPage() {
     >
       {error && (
         <div className="mt-5">
-          <ErrorMessage message={error} />
+          <ErrorMessage
+            message={error}
+          />
         </div>
       )}
 
@@ -159,15 +161,18 @@ export function RegistrationPage() {
         <Select
           label="Role"
           name="role"
+          required
           value={form.role}
           onChange={updateField}
         >
           <option value="DONOR">
             Donor
           </option>
+
           <option value="RECEIVER">
             Receiver
           </option>
+
           <option value="VOLUNTEER">
             Volunteer
           </option>
@@ -202,11 +207,11 @@ export function RegistrationPage() {
         </Button>
       </form>
 
-      <p className="mt-5 text-center text-sm text-slate-500">
+      <p className="mt-5 text-center text-sm text-slate-500 dark:text-slate-400">
         Already registered?{" "}
 
         <Link
-          className="font-bold text-blue-600"
+          className="font-bold text-blue-600 dark:text-blue-400"
           to="/login"
         >
           Sign in
@@ -215,7 +220,6 @@ export function RegistrationPage() {
     </PublicFormLayout>
   );
 }
-
 
 export function PasswordResetPage() {
   const [email, setEmail] =
@@ -247,7 +251,9 @@ export function PasswordResetPage() {
       setSubmitted(true);
     } catch (requestError) {
       setError(
-        getApiErrorMessage(requestError),
+        getApiErrorMessage(
+          requestError,
+        ),
       );
     } finally {
       setSubmitting(false);
@@ -300,12 +306,20 @@ export function PasswordResetPage() {
               Send reset instructions
             </Button>
           </form>
+
+          <p className="mt-5 text-center text-sm">
+            <Link
+              to="/login"
+              className="font-bold text-blue-600 dark:text-blue-400"
+            >
+              Return to sign in
+            </Link>
+          </p>
         </>
       )}
     </PublicFormLayout>
   );
 }
-
 
 export function ProfilePage() {
   const {
@@ -314,10 +328,8 @@ export function ProfilePage() {
   } = useAuth();
 
   const [form, setForm] = useState({
-    display_name:
-      user?.display_name || "",
-    mobile:
-      user?.mobile || "",
+    display_name: "",
+    mobile: "",
   });
 
   const [message, setMessage] =
@@ -329,8 +341,43 @@ export function ProfilePage() {
   const [submitting, setSubmitting] =
     useState(false);
 
+  useEffect(() => {
+    setForm({
+      display_name:
+        user?.display_name || "",
+      mobile:
+        user?.mobile || "",
+    });
+  }, [
+    user?.display_name,
+    user?.mobile,
+  ]);
+
+  function updateField(event) {
+    const {
+      name,
+      value,
+    } = event.target;
+
+    setForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
+
+    setMessage("");
+    setError("");
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
+
+    if (!form.display_name.trim()) {
+      setError(
+        "Display name is required.",
+      );
+
+      return;
+    }
 
     setSubmitting(true);
     setMessage("");
@@ -339,7 +386,12 @@ export function ProfilePage() {
     try {
       await api.patch(
         "/profiles/me/",
-        form,
+        {
+          display_name:
+            form.display_name.trim(),
+          mobile:
+            form.mobile.trim(),
+        },
       );
 
       await refreshUser();
@@ -349,12 +401,23 @@ export function ProfilePage() {
       );
     } catch (requestError) {
       setError(
-        getApiErrorMessage(requestError),
+        getApiErrorMessage(
+          requestError,
+        ),
       );
     } finally {
       setSubmitting(false);
     }
   }
+
+  const verificationStatus =
+    user?.verification_status ||
+    "PENDING";
+
+  const accountStatus =
+    user?.is_active === false
+      ? "SUSPENDED"
+      : "ACTIVE";
 
   return (
     <div>
@@ -367,7 +430,7 @@ export function ProfilePage() {
         {message && (
           <p
             role="status"
-            className="mb-5 rounded-xl bg-emerald-50 p-4 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+            className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300"
           >
             {message}
           </p>
@@ -387,15 +450,10 @@ export function ProfilePage() {
         >
           <Input
             label="Display name"
+            name="display_name"
             required
             value={form.display_name}
-            onChange={(event) =>
-              setForm({
-                ...form,
-                display_name:
-                  event.target.value,
-              })
-            }
+            onChange={updateField}
           />
 
           <Input
@@ -406,14 +464,9 @@ export function ProfilePage() {
 
           <Input
             label="Mobile number"
+            name="mobile"
             value={form.mobile}
-            onChange={(event) =>
-              setForm({
-                ...form,
-                mobile:
-                  event.target.value,
-              })
-            }
+            onChange={updateField}
           />
 
           <Input
@@ -422,21 +475,42 @@ export function ProfilePage() {
             disabled
           />
 
-          <div className="flex gap-2">
-            <StatusBadge
-              status={
-                user?.verification_status
-              }
-            />
+          <div className="grid gap-4 border-t border-slate-200 pt-5 dark:border-slate-700 sm:grid-cols-2">
+            <div>
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Participant verification
+              </p>
 
-            <StatusBadge
-              status={
-                user?.is_active
-                  ? "ACTIVE"
-                  : "SUSPENDED"
-              }
-            />
+              <StatusBadge
+                status={
+                  verificationStatus
+                }
+              />
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Account access
+              </p>
+
+              <StatusBadge
+                status={accountStatus}
+              />
+            </div>
           </div>
+
+          {accountStatus ===
+            "SUSPENDED" && (
+            <p
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+            >
+              Your account is suspended.
+              Protected operations are
+              unavailable. Contact an
+              administrator for assistance.
+            </p>
+          )}
 
           <SubmitBar
             submitLabel="Save profile"
@@ -447,7 +521,6 @@ export function ProfilePage() {
     </div>
   );
 }
-
 
 export function NotificationsPage() {
   const {
@@ -462,13 +535,22 @@ export function NotificationsPage() {
     },
   );
 
-  const [processing, setProcessing] =
-    useState(false);
+  const [processingId, setProcessingId] =
+    useState("");
+
+  function isNotificationRead(
+    notification,
+  ) {
+    return Boolean(
+      notification.is_read ??
+        notification.read_at,
+    );
+  }
 
   async function markRead(
     notificationId,
   ) {
-    setProcessing(true);
+    setProcessingId(notificationId);
 
     try {
       await api.post(
@@ -478,12 +560,12 @@ export function NotificationsPage() {
 
       await reload();
     } finally {
-      setProcessing(false);
+      setProcessingId("");
     }
   }
 
   async function markAllRead() {
-    setProcessing(true);
+    setProcessingId("ALL");
 
     try {
       await api.post(
@@ -493,16 +575,22 @@ export function NotificationsPage() {
 
       await reload();
     } finally {
-      setProcessing(false);
+      setProcessingId("");
     }
   }
 
-  const unreadCount = (
-    data || []
-  ).filter(
-    (notification) =>
-      !notification.is_read,
-  ).length;
+  const notifications =
+    Array.isArray(data)
+      ? data
+      : [];
+
+  const unreadCount =
+    notifications.filter(
+      (notification) =>
+        !isNotificationRead(
+          notification,
+        ),
+    ).length;
 
   return (
     <div>
@@ -513,10 +601,16 @@ export function NotificationsPage() {
           unreadCount > 0 ? (
             <Button
               variant="secondary"
-              isLoading={processing}
+              isLoading={
+                processingId === "ALL"
+              }
               onClick={markAllRead}
             >
-              <CheckCheck className="size-4" />
+              <CheckCheck
+                aria-hidden="true"
+                className="size-4"
+              />
+
               Mark all read
             </Button>
           ) : null
@@ -530,9 +624,19 @@ export function NotificationsPage() {
         />
       )}
 
+      {loading && (
+        <p
+          role="status"
+          className="text-slate-500 dark:text-slate-400"
+        >
+          Loading notifications...
+        </p>
+      )}
+
       {!loading &&
         !error &&
-        data.length === 0 && (
+        notifications.length ===
+          0 && (
           <EmptyState
             icon={Bell}
             title="No notifications"
@@ -540,82 +644,106 @@ export function NotificationsPage() {
           />
         )}
 
-      {loading && (
-        <p className="text-slate-500">
-          Loading notifications...
-        </p>
-      )}
-
       {!loading &&
         !error &&
-        data.length > 0 && (
+        notifications.length >
+          0 && (
           <div className="space-y-3">
-            {data.map(
-              (notification) => (
-                <Surface
-                  key={notification.id}
-                  className={
-                    notification.is_read
-                      ? ""
-                      : "border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20"
-                  }
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600 dark:bg-blue-950 dark:text-blue-300">
-                      <Bell className="size-5" />
-                    </div>
+            {notifications.map(
+              (notification) => {
+                const read =
+                  isNotificationRead(
+                    notification,
+                  );
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <h2 className="font-black text-slate-950 dark:text-white">
-                          {notification.title}
-                        </h2>
+                const createdAt =
+                  notification.created_at
+                    ? new Date(
+                        notification.created_at,
+                      ).toLocaleString(
+                        "en-IN",
+                      )
+                    : "";
 
-                        <StatusBadge
-                          status={
-                            notification.is_read
-                              ? "READ"
-                              : "PENDING"
-                          }
+                return (
+                  <Surface
+                    key={
+                      notification.id
+                    }
+                    className={
+                      read
+                        ? ""
+                        : "border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20"
+                    }
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600 dark:bg-blue-950 dark:text-blue-300">
+                        <Bell
+                          aria-hidden="true"
+                          className="size-5"
                         />
                       </div>
 
-                      <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                        {notification.message}
-                      </p>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <h2 className="font-black text-slate-950 dark:text-white">
+                            {notification.title ||
+                              "SmartFood update"}
+                          </h2>
 
-                      <p className="mt-3 text-xs text-slate-500">
-                        {new Date(
-                          notification.created_at,
-                        ).toLocaleString()}
-                      </p>
+                          <StatusBadge
+                            status={
+                              read
+                                ? "READ"
+                                : "PENDING"
+                            }
+                          />
+                        </div>
 
-                      {!notification.is_read && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="mt-3"
-                          disabled={processing}
-                          onClick={() =>
-                            markRead(
-                              notification.id,
-                            )
-                          }
-                        >
-                          Mark as read
-                        </Button>
-                      )}
+                        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                          {notification.message}
+                        </p>
+
+                        {createdAt && (
+                          <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                            {createdAt}
+                          </p>
+                        )}
+
+                        {!read && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="mt-3"
+                            isLoading={
+                              processingId ===
+                              notification.id
+                            }
+                            disabled={
+                              Boolean(
+                                processingId,
+                              )
+                            }
+                            onClick={() =>
+                              markRead(
+                                notification.id,
+                              )
+                            }
+                          >
+                            Mark as read
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </Surface>
-              ),
+                  </Surface>
+                );
+              },
             )}
           </div>
         )}
     </div>
   );
 }
-
 
 export function HelpReportingPage() {
   const [form, setForm] = useState({
@@ -634,11 +762,15 @@ export function HelpReportingPage() {
     useState(false);
 
   function updateField(event) {
-    setForm({
-      ...form,
-      [event.target.name]:
-        event.target.value,
-    });
+    const {
+      name,
+      value,
+    } = event.target;
+
+    setForm((current) => ({
+      ...current,
+      [name]: value,
+    }));
 
     setError("");
     setSubmitted(false);
@@ -647,6 +779,17 @@ export function HelpReportingPage() {
   async function handleSubmit(event) {
     event.preventDefault();
 
+    if (
+      !form.subject.trim() ||
+      !form.description.trim()
+    ) {
+      setError(
+        "Subject and problem description are required.",
+      );
+
+      return;
+    }
+
     setSubmitting(true);
     setError("");
     setSubmitted(false);
@@ -654,7 +797,14 @@ export function HelpReportingPage() {
     try {
       await api.post(
         "/complaints/",
-        form,
+        {
+          complaint_type:
+            form.complaint_type,
+          subject:
+            form.subject.trim(),
+          description:
+            form.description.trim(),
+        },
       );
 
       setSubmitted(true);
@@ -666,7 +816,9 @@ export function HelpReportingPage() {
       });
     } catch (requestError) {
       setError(
-        getApiErrorMessage(requestError),
+        getApiErrorMessage(
+          requestError,
+        ),
       );
     } finally {
       setSubmitting(false);
@@ -682,15 +834,19 @@ export function HelpReportingPage() {
 
       <Surface className="max-w-2xl">
         <div className="mb-6 flex size-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-600 dark:bg-blue-950 dark:text-blue-300">
-          <CircleHelp className="size-6" />
+          <CircleHelp
+            aria-hidden="true"
+            className="size-6"
+          />
         </div>
 
         {submitted && (
           <p
             role="status"
-            className="mb-5 rounded-xl bg-emerald-50 p-4 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+            className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300"
           >
-            Your report was submitted successfully.
+            Your report was submitted
+            successfully.
           </p>
         )}
 
@@ -717,15 +873,19 @@ export function HelpReportingPage() {
             <option value="DONATION">
               Donation
             </option>
+
             <option value="TRANSPORT">
               Transport
             </option>
+
             <option value="PARTICIPANT">
               Participant
             </option>
+
             <option value="VERIFICATION">
               Verification
             </option>
+
             <option value="OTHER">
               Other
             </option>
@@ -760,7 +920,6 @@ export function HelpReportingPage() {
   );
 }
 
-
 function PublicFormLayout({
   title,
   description,
@@ -771,7 +930,7 @@ function PublicFormLayout({
       <section className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-800 sm:p-8">
         <Link
           to="/login"
-          className="text-xl font-black text-blue-600"
+          className="text-xl font-black text-blue-600 dark:text-blue-400"
         >
           SmartFood
         </Link>

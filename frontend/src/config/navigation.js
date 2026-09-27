@@ -14,28 +14,37 @@ import {
   Users,
 } from "lucide-react";
 
-const sharedItems = [
-  {
+const sharedItems = {
+  dashboard: {
     label: "Dashboard",
     path: "/dashboard",
     icon: LayoutDashboard,
   },
-  {
+
+  analytics: {
+    label: "Impact",
+    path: "/analytics",
+    icon: BarChart3,
+  },
+
+  notifications: {
     label: "Notifications",
     path: "/notifications",
     icon: Bell,
   },
-  {
+
+  profile: {
     label: "Profile",
     path: "/profile",
     icon: Settings,
   },
-  {
+
+  help: {
     label: "Help",
     path: "/help",
     icon: CircleHelp,
   },
-];
+};
 
 const roleItems = {
   DONOR: [
@@ -108,11 +117,6 @@ const roleItems = {
       path: "/admin/complaints",
       icon: CircleHelp,
     },
-    {
-      label: "Analytics",
-      path: "/admin/analytics",
-      icon: BarChart3,
-    },
   ],
 };
 
@@ -121,8 +125,11 @@ export function getNavigationForRole(role) {
     role?.toUpperCase();
 
   return [
-    sharedItems[0],
+    sharedItems.dashboard,
     ...(roleItems[normalizedRole] || []),
-    ...sharedItems.slice(1),
+    sharedItems.analytics,
+    sharedItems.notifications,
+    sharedItems.profile,
+    sharedItems.help,
   ];
 }
