@@ -328,3 +328,52 @@ SMARTFOOD_ML = {
         default=True,
     ),
 }
+
+
+SMARTFOOD_RETENTION = {
+    # Seven years for general administrative audits.
+    "AUDIT_EVENT_DAYS": env.int(
+        "SMARTFOOD_AUDIT_RETENTION_DAYS",
+        default=2555,
+    ),
+
+    # Two years after verification review.
+    "VERIFICATION_DOCUMENT_DAYS": env.int(
+        "SMARTFOOD_VERIFICATION_DOCUMENT_RETENTION_DAYS",
+        default=730,
+    ),
+
+    # Transaction records, donation history and manual
+    # outcome corrections are retained indefinitely.
+    "TRANSACTION_HISTORY_DAYS": None,
+}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+
+    "filters": {
+        "redact_sensitive": {
+            "()": (
+                "apps.moderation.logging_filters."
+                "SensitiveDataFilter"
+            ),
+        },
+    },
+
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "filters": [
+                "redact_sensitive",
+            ],
+        },
+    },
+
+    "root": {
+        "handlers": [
+            "console",
+        ],
+        "level": "INFO",
+    },
+}

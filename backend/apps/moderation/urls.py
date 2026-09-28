@@ -1,11 +1,15 @@
 from django.urls import path
 
+from .audit_views import (
+    AuditEventListView,
+    DonationOutcomeCorrectionView,
+    ParticipantDeactivateView,
+)
 from .complaint_views import (
     ComplaintAdminUpdateView,
     ComplaintDetailView,
     ComplaintListCreateView,
 )
-
 from .views import (
     ApproveVerificationView,
     RejectVerificationView,
@@ -69,13 +73,34 @@ urlpatterns = [
     path(
         (
             "admin/users/"
+            "<uuid:user_id>/deactivate/"
+        ),
+        ParticipantDeactivateView.as_view(),
+        name="participant-deactivate",
+    ),
+    path(
+        (
+            "admin/users/"
             "<uuid:user_id>/"
             "reopen-verification/"
         ),
         ReopenParticipantVerificationView.as_view(),
         name="participant-reopen",
     ),
-
+    path(
+        "admin/audit-events/",
+        AuditEventListView.as_view(),
+        name="audit-event-list",
+    ),
+    path(
+        (
+            "admin/donations/"
+            "<uuid:donation_id>/"
+            "correct-outcome/"
+        ),
+        DonationOutcomeCorrectionView.as_view(),
+        name="donation-outcome-correction",
+    ),
     path(
         "complaints/",
         ComplaintListCreateView.as_view(),

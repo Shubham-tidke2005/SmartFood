@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import (
     get_object_or_404,
 )
@@ -15,6 +16,10 @@ from apps.accounts.permissions import (
     IsAdministrator,
 )
 
+from .audit_models import AuditEvent
+from .audit_services import (
+    record_audit_event,
+)
 from .complaints import Complaint
 from .complaint_serializers import (
     ComplaintAdminUpdateSerializer,
@@ -30,28 +35,22 @@ class ComplaintListCreateView(APIView):
     def get(self, request):
         user = request.user
 
-        if (
+        queryset = (
+            Complaint.objects
+            .select_related(
+                "reporter",
+                "reported_user",
+                "assigned_to",
+                "donation",
+            )
+        )
+
+        if not (
             user.role == User.Role.ADMIN
             and user.is_staff
         ):
-            queryset = (
-                Complaint.objects.select_related(
-                    "reporter",
-                    "reported_user",
-                    "assigned_to",
-                    "donation",
-                ).all()
-            )
-        else:
-            queryset = (
-                Complaint.objects.select_related(
-                    "reporter",
-                    "reported_user",
-                    "assigned_to",
-                    "donation",
-                ).filter(
-                    reporter=user,
-                )
+            queryset = queryset.filter(
+                reporter=user
             )
 
         complaint_status = (
@@ -75,7 +74,7 @@ class ComplaintListCreateView(APIView):
                     {
                         "status": (
                             "Invalid complaint status."
-                        ),
+                        )
                     },
                     status=(
                         status.HTTP_400_BAD_REQUEST
@@ -83,7 +82,7 @@ class ComplaintListCreateView(APIView):
                 )
 
             queryset = queryset.filter(
-                status=complaint_status,
+                status=complaint_status
             )
 
         if complaint_type:
@@ -96,7 +95,7 @@ class ComplaintListCreateView(APIView):
                     {
                         "type": (
                             "Invalid complaint type."
-                        ),
+                        )
                     },
                     status=(
                         status.HTTP_400_BAD_REQUEST
@@ -104,15 +103,15 @@ class ComplaintListCreateView(APIView):
                 )
 
             queryset = queryset.filter(
-                complaint_type=complaint_type,
+                complaint_type=complaint_type
             )
 
-        serializer = ComplaintSerializer(
-            queryset,
-            many=True,
+        return Response(
+            ComplaintSerializer(
+                queryset,
+                many=True,
+            ).data
         )
-
-        return Response(serializer.data)
 
     def post(self, request):
         serializer = ComplaintSerializer(
@@ -123,21 +122,17 @@ class ComplaintListCreateView(APIView):
         )
 
         serializer.is_valid(
-            raise_exception=True,
+            raise_exception=True
         )
 
         complaint = serializer.save(
-            reporter=request.user,
-        )
-
-        response_serializer = (
-            ComplaintSerializer(
-                complaint,
-            )
+            reporter=request.user
         )
 
         return Response(
-            response_serializer.data,
+            ComplaintSerializer(
+                complaint
+            ).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -153,7 +148,8 @@ class ComplaintDetailView(APIView):
         complaint_id,
     ):
         queryset = (
-            Complaint.objects.select_related(
+            Complaint.objects
+            .select_related(
                 "reporter",
                 "reported_user",
                 "assigned_to",
@@ -187,11 +183,11 @@ class ComplaintDetailView(APIView):
             complaint_id,
         )
 
-        serializer = ComplaintSerializer(
-            complaint,
+        return Response(
+            ComplaintSerializer(
+                complaint
+            ).data
         )
-
-        return Response(serializer.data)
 
 
 class ComplaintAdminUpdateView(APIView):
@@ -204,68 +200,149 @@ class ComplaintAdminUpdateView(APIView):
         request,
         complaint_id,
     ):
-        complaint = get_object_or_404(
-            Complaint,
-            id=complaint_id,
-        )
+        audit_reason = (
+            request.data.get("audit_reason")
+            or request.data.get("resolution")
+            or ""
+        ).strip()
 
-        serializer = (
-            ComplaintAdminUpdateSerializer(
-                complaint,
-                data=request.data,
-                partial=True,
+        if len(audit_reason) < 5:
+            return Response(
+                {
+                    "audit_reason": (
+                        "Provide a reason of at least "
+                        "5 characters."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        )
 
-        serializer.is_valid(
-            raise_exception=True,
-        )
+        payload = request.data.copy()
 
-        updated_complaint = (
-            serializer.save()
-        )
+        if hasattr(payload, "pop"):
+            payload.pop(
+                "audit_reason",
+                None,
+            )
 
-        if (
-            updated_complaint.status
-            in {
-                Complaint.Status.RESOLVED,
-                Complaint.Status.REJECTED,
+        with transaction.atomic():
+            complaint = get_object_or_404(
+                Complaint.objects
+                .select_for_update(),
+                id=complaint_id,
+            )
+
+            old_values = {
+                "status": complaint.status,
+                "assigned_to_id": (
+                    str(complaint.assigned_to_id)
+                    if complaint.assigned_to_id
+                    else None
+                ),
+                "resolution": (
+                    complaint.resolution
+                ),
+                "resolved_at": (
+                    complaint
+                    .resolved_at
+                    .isoformat()
+                    if complaint.resolved_at
+                    else None
+                ),
             }
-        ):
+
+            serializer = (
+                ComplaintAdminUpdateSerializer(
+                    complaint,
+                    data=payload,
+                    partial=True,
+                )
+            )
+
+            serializer.is_valid(
+                raise_exception=True
+            )
+
+            updated_complaint = (
+                serializer.save()
+            )
+
             if (
-                updated_complaint
-                .resolved_at
-                is None
+                updated_complaint.status
+                in {
+                    Complaint.Status.RESOLVED,
+                    Complaint.Status.REJECTED,
+                }
             ):
-                updated_complaint.resolved_at = (
-                    timezone.now()
-                )
-
-                updated_complaint.save(
-                    update_fields=[
-                        "resolved_at",
-                    ]
-                )
-
-        elif (
-            updated_complaint
-            .resolved_at
-            is not None
-        ):
-            updated_complaint.resolved_at = None
+                if (
+                    updated_complaint
+                    .resolved_at
+                    is None
+                ):
+                    updated_complaint.resolved_at = (
+                        timezone.now()
+                    )
+            else:
+                updated_complaint.resolved_at = None
 
             updated_complaint.save(
                 update_fields=[
                     "resolved_at",
+                    "updated_at",
                 ]
             )
 
-        response_serializer = (
-            ComplaintSerializer(
-                updated_complaint,
+            new_values = {
+                "status": (
+                    updated_complaint.status
+                ),
+                "assigned_to_id": (
+                    str(
+                        updated_complaint
+                        .assigned_to_id
+                    )
+                    if (
+                        updated_complaint
+                        .assigned_to_id
+                    )
+                    else None
+                ),
+                "resolution": (
+                    updated_complaint
+                    .resolution
+                ),
+                "resolved_at": (
+                    updated_complaint
+                    .resolved_at
+                    .isoformat()
+                    if (
+                        updated_complaint
+                        .resolved_at
+                    )
+                    else None
+                ),
+            }
+
+            record_audit_event(
+                action=(
+                    AuditEvent.Action
+                    .COMPLAINT_UPDATED
+                ),
+                target_type=(
+                    "moderation.Complaint"
+                ),
+                target_id=(
+                    updated_complaint.id
+                ),
+                actor=request.user,
+                request=request,
+                reason=audit_reason,
+                old_values=old_values,
+                new_values=new_values,
             )
-        )
 
         return Response(
-            response_serializer.data
+            ComplaintSerializer(
+                updated_complaint
+            ).data
         )

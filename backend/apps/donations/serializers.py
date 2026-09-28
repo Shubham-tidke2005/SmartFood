@@ -16,6 +16,9 @@ from .models import (
     FoodCategory,
 )
 from .validators import validate_donation_image
+from .privacy import (
+    user_can_view_exact_pickup,
+)
 
 
 class FoodCategorySerializer(serializers.ModelSerializer):
@@ -110,33 +113,41 @@ class DonationRevisionReadSerializer(
 
         if request is None:
             return None
-
-        user = request.user
-        donation = revision.donation
-
-        if not user.is_authenticated:
-            return None
-
-        if (
-            user.role == User.Role.ADMIN
-            or donation.donor_id == user.id
+        
+        if user_can_view_exact_pickup(
+            request.user,
+            revision.donation,
         ):
             return revision.pickup_address
 
-        related_receiver = (
-            donation.requests.filter(
-                receiver=user,
-                status__in=[
-                    DonationRequest.Status.PENDING,
-                    DonationRequest.Status.APPROVED,
-                ],
-            ).exists()
-        )
-
-        if related_receiver:
-            return revision.pickup_address
-
         return None
+
+        # user = request.user
+        # donation = revision.donation
+
+        # if not user.is_authenticated:
+        #     return None
+
+        # if (
+        #     user.role == User.Role.ADMIN
+        #     or donation.donor_id == user.id
+        # ):
+        #     return revision.pickup_address
+
+        # related_receiver = (
+        #     donation.requests.filter(
+        #         receiver=user,
+        #         status__in=[
+        #             DonationRequest.Status.PENDING,
+        #             DonationRequest.Status.APPROVED,
+        #         ],
+        #     ).exists()
+        # )
+
+        # if related_receiver:
+        #     return revision.pickup_address
+
+        # return None
 
 
 class DonationReadSerializer(serializers.ModelSerializer):

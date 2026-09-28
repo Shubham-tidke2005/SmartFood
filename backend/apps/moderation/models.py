@@ -6,6 +6,11 @@ from django.db import models
 from django.db.models import Q
 
 from .storage import private_verification_storage
+from .audit_models import (  # noqa: E402, F401
+    AuditEvent,
+    OutcomeCorrection,
+)
+from .complaints import Complaint  # noqa: E402, F401
 
 
 def verification_document_path(instance, filename):

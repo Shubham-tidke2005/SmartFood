@@ -30,6 +30,9 @@ from .serializers import (
     VerificationSubmissionReadSerializer,
 )
 
+from .audit_models import AuditEvent
+from .audit_services import record_audit_event
+
 
 UserModel = get_user_model()
 
@@ -319,7 +322,9 @@ class VerificationDocumentDownloadView(APIView):
             )
         )
 
-        if not user_is_administrator(request.user):
+        if not user_is_administrator(
+            request.user
+        ):
             queryset = queryset.filter(
                 submission__user=request.user
             )
@@ -332,18 +337,59 @@ class VerificationDocumentDownloadView(APIView):
         if not document.file:
             return Response(
                 {
-                    "detail": "Document file is unavailable.",
+                    "detail": (
+                        "Document file is unavailable."
+                    )
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        return FileResponse(
+        record_audit_event(
+            action=(
+                AuditEvent.Action
+                .DOCUMENT_DOWNLOADED
+            ),
+            target_type=(
+                "moderation.VerificationDocument"
+            ),
+            target_id=document.id,
+            actor=request.user,
+            request=request,
+            reason=(
+                "Authorized private document access."
+            ),
+            metadata={
+                "submission_id": str(
+                    document.submission_id
+                ),
+                "document_type": (
+                    document.document_type
+                ),
+                "size_bytes": (
+                    document.size_bytes
+                ),
+            },
+        )
+
+        response = FileResponse(
             document.file.open("rb"),
             as_attachment=True,
             filename=document.original_name,
             content_type=document.mime_type,
         )
 
+        response["Cache-Control"] = (
+            "private, no-store, max-age=0"
+        )
+        response["Pragma"] = "no-cache"
+        response["X-Content-Type-Options"] = (
+            "nosniff"
+        )
+        response["Content-Security-Policy"] = (
+            "default-src 'none'; sandbox"
+        )
+
+        return response
 
 class ApproveVerificationView(APIView):
     permission_classes = [
