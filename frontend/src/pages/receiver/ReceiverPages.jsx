@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 
 import api from "../../lib/api";
+
 import {
   getApiErrorMessage,
 } from "../../lib/apiError";
@@ -81,11 +82,6 @@ export function BrowseDonationsPage() {
     const parameters =
       new URLSearchParams();
 
-    /*
-     * Do not send status=AVAILABLE here.
-     * The backend automatically restricts receiver
-     * discovery to eligible available donations.
-     */
     parameters.set(
       "ordering",
       ordering,
@@ -198,6 +194,7 @@ export function BrowseDonationsPage() {
               size="sm"
               onClick={() => {
                 setCategory("");
+
                 setOrdering(
                   "pickup_deadline",
                 );
@@ -240,11 +237,20 @@ export function ReceiverDonationDetailPage() {
   const [note, setNote] =
     useState("");
 
+  const [
+    proposedMode,
+    setProposedMode,
+  ] = useState(
+    "RECEIVER_COLLECTION",
+  );
+
   const [submitting, setSubmitting] =
     useState(false);
 
-  const [actionError, setActionError] =
-    useState("");
+  const [
+    actionError,
+    setActionError,
+  ] = useState("");
 
   const [
     successMessage,
@@ -269,6 +275,8 @@ export function ReceiverDonationDetailPage() {
         `/donations/${donationId}/requests/`,
         {
           message: note.trim(),
+          proposed_mode:
+            proposedMode,
         },
       );
 
@@ -281,7 +289,9 @@ export function ReceiverDonationDetailPage() {
       await reload();
     } catch (requestError) {
       setActionError(
-        getApiErrorMessage(requestError),
+        getApiErrorMessage(
+          requestError,
+        ),
       );
     } finally {
       setSubmitting(false);
@@ -303,16 +313,22 @@ export function ReceiverDonationDetailPage() {
     );
   }
 
+  const revision =
+    data?.current_revision ||
+    data ||
+    {};
+
   return (
     <div>
       <PageHeader
         eyebrow="Donation details"
         title={
-          data?.food_name ||
-          data?.title ||
+          revision.food_name ||
           "Donation"
         }
-        description={data?.description}
+        description={
+          revision.description
+        }
         action={
           data?.status && (
             <StatusBadge
@@ -341,75 +357,79 @@ export function ReceiverDonationDetailPage() {
             <Information
               label="Quantity"
               value={
-                `${data?.quantity ?? "—"} ` +
-                `${data?.unit ?? ""}`
+                `${revision.quantity ?? "—"} ` +
+                `${revision.unit ?? ""}`
               }
             />
 
             <Information
               label="Category"
               value={
-                data?.category_name ||
-                data?.category?.name ||
-                data?.category
+                revision.category_name ||
+                revision.category?.name ||
+                revision.category
               }
             />
 
             <Information
               label="Pickup area"
               value={
-                data?.pickup_area ||
-                data?.pickup_location
+                revision.pickup_area ||
+                revision.pickup_location
               }
             />
 
             <Information
               label="Pickup deadline"
               value={formatDateTime(
-                data?.pickup_deadline,
+                revision.pickup_deadline,
               )}
             />
 
             <Information
               label="Prepared at"
               value={formatDateTime(
-                data?.prepared_at,
+                revision.prepared_at,
               )}
             />
 
             <Information
               label="Use by"
               value={formatDateTime(
-                data?.use_by_at,
+                revision.use_by_at,
               )}
             />
 
             <Information
               label="Storage condition"
               value={
-                data?.storage_condition
+                revision.storage_condition
               }
             />
 
             <Information
               label="Dietary information"
               value={
-                data?.dietary_information
+                revision.dietary_information
               }
             />
 
             <Information
               label="Allergen information"
               value={
-                data?.allergen_information
+                revision.allergen_information
               }
             />
 
             <Information
               label="Approximate distance"
               value={
-                data?.approximate_distance_km
-                  ? `${data.approximate_distance_km} km straight-line distance`
+                data
+                  ?.approximate_distance_km
+                  ? (
+                    `${data.approximate_distance_km} ` +
+                    "km straight-line distance"
+                  )
                   : "—"
               }
             />
@@ -452,6 +472,30 @@ export function ReceiverDonationDetailPage() {
             placeholder="Explain your requirement and collection plan."
           />
 
+          <Select
+            className="mt-4"
+            label="Preferred transport"
+            value={proposedMode}
+            disabled={submitting}
+            onChange={(event) =>
+              setProposedMode(
+                event.target.value,
+              )
+            }
+          >
+            <option value="RECEIVER_COLLECTION">
+              Receiver collection
+            </option>
+
+            <option value="DONOR_DELIVERY">
+              Donor delivery
+            </option>
+
+            <option value="VOLUNTEER_DELIVERY">
+              Volunteer delivery
+            </option>
+          </Select>
+
           <Button
             className="mt-4 w-full"
             isLoading={submitting}
@@ -460,7 +504,9 @@ export function ReceiverDonationDetailPage() {
               data?.status !==
                 "AVAILABLE"
             }
-            onClick={requestDonation}
+            onClick={
+              requestDonation
+            }
           >
             Submit request
           </Button>
@@ -501,15 +547,18 @@ export function ReceiverRequirementsPage() {
     },
   );
 
-  const [form, setForm] = useState({
-    category: "",
-    quantity_needed: "",
-    unit: "PORTION",
-    needed_until: "",
-  });
+  const [form, setForm] =
+    useState({
+      category: "",
+      quantity_needed: "",
+      unit: "PORTION",
+      needed_until: "",
+    });
 
-  const [submitError, setSubmitError] =
-    useState("");
+  const [
+    submitError,
+    setSubmitError,
+  ] = useState("");
 
   const [
     successMessage,
@@ -534,11 +583,15 @@ export function ReceiverRequirementsPage() {
     setSuccessMessage("");
   }
 
-  async function submitRequirement(event) {
+  async function submitRequirement(
+    event,
+  ) {
     event.preventDefault();
 
     const quantity =
-      Number(form.quantity_needed);
+      Number(
+        form.quantity_needed,
+      );
 
     if (
       !form.category ||
@@ -559,15 +612,17 @@ export function ReceiverRequirementsPage() {
 
     try {
       await api.post(
-  "/receivers/requirements/",
-  {
-    category_id: form.category,
-    quantity_needed: quantity,
-    unit: form.unit,
-    needed_until:
-      form.needed_until,
-  },
-);
+        "/receivers/requirements/",
+        {
+          category_id:
+            form.category,
+          quantity_needed:
+            quantity,
+          unit: form.unit,
+          needed_until:
+            form.needed_until,
+        },
+      );
 
       setForm({
         category: "",
@@ -583,7 +638,9 @@ export function ReceiverRequirementsPage() {
       await reload();
     } catch (requestError) {
       setSubmitError(
-        getApiErrorMessage(requestError),
+        getApiErrorMessage(
+          requestError,
+        ),
       );
     } finally {
       setSubmitting(false);
@@ -616,14 +673,18 @@ export function ReceiverRequirementsPage() {
           {submitError && (
             <div className="mt-4">
               <ErrorMessage
-                message={submitError}
+                message={
+                  submitError
+                }
               />
             </div>
           )}
 
           <form
             className="mt-5 space-y-4"
-            onSubmit={submitRequirement}
+            onSubmit={
+              submitRequirement
+            }
           >
             <Select
               label="Food category"
@@ -649,7 +710,9 @@ export function ReceiverRequirementsPage() {
                       categoryItem.code
                     }
                   >
-                    {categoryItem.name}
+                    {
+                      categoryItem.name
+                    }
                   </option>
                 ),
               )}
@@ -680,10 +743,16 @@ export function ReceiverRequirementsPage() {
               {UNIT_OPTIONS.map(
                 (unitOption) => (
                   <option
-                    key={unitOption.value}
-                    value={unitOption.value}
+                    key={
+                      unitOption.value
+                    }
+                    value={
+                      unitOption.value
+                    }
                   >
-                    {unitOption.label}
+                    {
+                      unitOption.label
+                    }
                   </option>
                 ),
               )}
@@ -694,7 +763,9 @@ export function ReceiverRequirementsPage() {
               name="needed_until"
               type="date"
               required
-              value={form.needed_until}
+              value={
+                form.needed_until
+              }
               disabled={submitting}
               onChange={updateField}
             />
@@ -730,12 +801,13 @@ export function ReceiverRequirementsPage() {
 
 
 export function ReceiverRequestsPage() {
-  const resource = useApiResource(
-    "/donations/requests/",
-    {
-      list: true,
-    },
-  );
+  const resource =
+    useApiResource(
+      "/donations/requests/",
+      {
+        list: true,
+      },
+    );
 
   return (
     <div>
@@ -759,19 +831,24 @@ export function ReceiverRequestsPage() {
 
 
 export function ReceiptConfirmationPage() {
-  const { donationId } = useParams();
+  const { donationId } =
+    useParams();
 
-  const navigate = useNavigate();
+  const navigate =
+    useNavigate();
 
-  const [form, setForm] = useState({
-    accepted_quantity: "",
-    unit: "PORTION",
-    discrepancy_type: "NONE",
-    discrepancy_notes: "",
-    received_at: toLocalDateTimeValue(
-      new Date(),
-    ),
-  });
+  const [form, setForm] =
+    useState({
+      accepted_quantity: "",
+      unit: "PORTION",
+      discrepancy_type:
+        "NONE",
+      discrepancy_notes: "",
+      received_at:
+        toLocalDateTimeValue(
+          new Date(),
+        ),
+    });
 
   const [error, setError] =
     useState("");
@@ -793,11 +870,15 @@ export function ReceiptConfirmationPage() {
     setError("");
   }
 
-  async function handleSubmit(event) {
+  async function handleSubmit(
+    event,
+  ) {
     event.preventDefault();
 
     const acceptedQuantity =
-      Number(form.accepted_quantity);
+      Number(
+        form.accepted_quantity,
+      );
 
     if (
       !Number.isFinite(
@@ -833,11 +914,16 @@ export function ReceiptConfirmationPage() {
         {
           accepted_quantity:
             acceptedQuantity,
-          unit: form.unit,
+
+          unit:
+            form.unit,
+
           discrepancy_type:
             form.discrepancy_type,
+
           discrepancy_notes:
             form.discrepancy_notes.trim(),
+
           received_at:
             new Date(
               form.received_at,
@@ -853,7 +939,9 @@ export function ReceiptConfirmationPage() {
       );
     } catch (requestError) {
       setError(
-        getApiErrorMessage(requestError),
+        getApiErrorMessage(
+          requestError,
+        ),
       );
     } finally {
       setSubmitting(false);
@@ -907,10 +995,16 @@ export function ReceiptConfirmationPage() {
               {UNIT_OPTIONS.map(
                 (unitOption) => (
                   <option
-                    key={unitOption.value}
-                    value={unitOption.value}
+                    key={
+                      unitOption.value
+                    }
+                    value={
+                      unitOption.value
+                    }
                   >
-                    {unitOption.label}
+                    {
+                      unitOption.label
+                    }
                   </option>
                 ),
               )}
@@ -922,7 +1016,9 @@ export function ReceiptConfirmationPage() {
             name="received_at"
             type="datetime-local"
             required
-            value={form.received_at}
+            value={
+              form.received_at
+            }
             disabled={submitting}
             onChange={updateField}
           />
@@ -999,7 +1095,7 @@ function Information({
         {label}
       </p>
 
-      <p className="mt-1 text-slate-950 dark:text-white">
+      <p className="mt-1 break-words text-slate-950 dark:text-white">
         {value || "—"}
       </p>
     </div>
@@ -1012,7 +1108,8 @@ function formatDateTime(value) {
     return "—";
   }
 
-  const date = new Date(value);
+  const date =
+    new Date(value);
 
   return Number.isNaN(
     date.getTime(),
@@ -1022,12 +1119,16 @@ function formatDateTime(value) {
 }
 
 
-function toLocalDateTimeValue(date) {
+function toLocalDateTimeValue(
+  date,
+) {
   const timezoneOffset =
-    date.getTimezoneOffset() * 60000;
+    date.getTimezoneOffset() *
+    60000;
 
   return new Date(
-    date.getTime() - timezoneOffset,
+    date.getTime() -
+      timezoneOffset,
   )
     .toISOString()
     .slice(0, 16);

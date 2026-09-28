@@ -1,0 +1,319 @@
+{
+  "model_version": "completion-model-1.0",
+  "generated_at": "2026-09-28T05:55:57.091185+00:00",
+  "dataset_path": "C:\\Shubham\\SmartFood\\ml\\data\\synthetic\\smartfood_synthetic_matches.csv",
+  "dataset_sources": [
+    "SYNTHETIC"
+  ],
+  "dataset_rows": 3000,
+  "split_strategy": "Chronological 70/15/15 split grouped by donation_id",
+  "dataset_splits": {
+    "train": {
+      "rows": 2100,
+      "unique_transactions": 2100,
+      "not_completed": 619,
+      "completed": 1481,
+      "completion_rate": 0.7052380952380952,
+      "start_timestamp": "2025-01-01T07:54:42+00:00",
+      "end_timestamp": "2026-02-26T19:44:52+00:00"
+    },
+    "validation": {
+      "rows": 450,
+      "unique_transactions": 450,
+      "not_completed": 133,
+      "completed": 317,
+      "completion_rate": 0.7044444444444444,
+      "start_timestamp": "2026-02-26T20:08:38+00:00",
+      "end_timestamp": "2026-05-28T10:27:07+00:00"
+    },
+    "test": {
+      "rows": 450,
+      "unique_transactions": 450,
+      "not_completed": 140,
+      "completed": 310,
+      "completion_rate": 0.6888888888888889,
+      "start_timestamp": "2026-05-28T15:39:16+00:00",
+      "end_timestamp": "2026-08-31T17:08:18+00:00"
+    }
+  },
+  "input_features": {
+    "numeric": [
+      "distance",
+      "quantity_match",
+      "availability_overlap",
+      "transport_readiness",
+      "donation_quantity",
+      "remaining_capacity",
+      "approximate_distance_km",
+      "maximum_service_distance_km",
+      "active_allocations",
+      "maximum_active_allocations"
+    ],
+    "categorical": [
+      "category_name",
+      "unit"
+    ]
+  },
+  "excluded_leakage_columns": [
+    "approved_at",
+    "baseline_score",
+    "dataset_source",
+    "donation_id",
+    "donation_request_id",
+    "failure_reason",
+    "outcome_at",
+    "receiver_id",
+    "recommendation_evaluation_id",
+    "recommendation_timestamp",
+    "requested_revision_id",
+    "target_completed",
+    "training_record_id"
+  ],
+  "selection_rule": "Lowest validation Brier score, then highest validation F1",
+  "selected_model": "logistic_regression",
+  "validation_results": {
+    "logistic_regression": {
+      "accuracy": 0.7222222222222222,
+      "precision": 0.7232558139534884,
+      "recall": 0.9810725552050473,
+      "f1": 0.8326639892904953,
+      "roc_auc": 0.6662318256208344,
+      "average_precision": 0.812172663231614,
+      "brier_score": 0.19240800517500248,
+      "log_loss": 0.5699045035403646,
+      "confusion_matrix": [
+        [
+          14,
+          119
+        ],
+        [
+          6,
+          311
+        ]
+      ],
+      "classification_report": {
+        "not_completed": {
+          "precision": 0.7,
+          "recall": 0.10526315789473684,
+          "f1-score": 0.1830065359477124,
+          "support": 133.0
+        },
+        "completed": {
+          "precision": 0.7232558139534884,
+          "recall": 0.9810725552050473,
+          "f1-score": 0.8326639892904953,
+          "support": 317.0
+        },
+        "accuracy": 0.7222222222222222,
+        "macro avg": {
+          "precision": 0.7116279069767442,
+          "recall": 0.5431678565498921,
+          "f1-score": 0.5078352626191038,
+          "support": 450.0
+        },
+        "weighted avg": {
+          "precision": 0.7163824289405686,
+          "recall": 0.7222222222222222,
+          "f1-score": 0.6406541197469617,
+          "support": 450.0
+        }
+      }
+    },
+    "random_forest": {
+      "accuracy": 0.7044444444444444,
+      "precision": 0.7555555555555555,
+      "recall": 0.8580441640378549,
+      "f1": 0.8035450516986706,
+      "roc_auc": 0.6650696140983373,
+      "average_precision": 0.8207908264079709,
+      "brier_score": 0.20505322051187472,
+      "log_loss": 0.5982028616269044,
+      "confusion_matrix": [
+        [
+          45,
+          88
+        ],
+        [
+          45,
+          272
+        ]
+      ],
+      "classification_report": {
+        "not_completed": {
+          "precision": 0.5,
+          "recall": 0.3383458646616541,
+          "f1-score": 0.40358744394618834,
+          "support": 133.0
+        },
+        "completed": {
+          "precision": 0.7555555555555555,
+          "recall": 0.8580441640378549,
+          "f1-score": 0.8035450516986706,
+          "support": 317.0
+        },
+        "accuracy": 0.7044444444444444,
+        "macro avg": {
+          "precision": 0.6277777777777778,
+          "recall": 0.5981950143497545,
+          "f1-score": 0.6035662478224295,
+          "support": 450.0
+        },
+        "weighted avg": {
+          "precision": 0.6800246913580246,
+          "recall": 0.7044444444444444,
+          "f1-score": 0.6853353587407148,
+          "support": 450.0
+        }
+      }
+    }
+  },
+  "test_results": {
+    "logistic_regression": {
+      "accuracy": 0.6933333333333334,
+      "precision": 0.6936936936936937,
+      "recall": 0.9935483870967742,
+      "f1": 0.8169761273209549,
+      "roc_auc": 0.603594470046083,
+      "average_precision": 0.7640577746385673,
+      "brier_score": 0.2071381791875165,
+      "log_loss": 0.6041173403623857,
+      "confusion_matrix": [
+        [
+          4,
+          136
+        ],
+        [
+          2,
+          308
+        ]
+      ],
+      "classification_report": {
+        "not_completed": {
+          "precision": 0.6666666666666666,
+          "recall": 0.02857142857142857,
+          "f1-score": 0.0547945205479452,
+          "support": 140.0
+        },
+        "completed": {
+          "precision": 0.6936936936936937,
+          "recall": 0.9935483870967742,
+          "f1-score": 0.8169761273209549,
+          "support": 310.0
+        },
+        "accuracy": 0.6933333333333334,
+        "macro avg": {
+          "precision": 0.6801801801801801,
+          "recall": 0.5110599078341014,
+          "f1-score": 0.43588532393445006,
+          "support": 450.0
+        },
+        "weighted avg": {
+          "precision": 0.6852852852852853,
+          "recall": 0.6933333333333334,
+          "f1-score": 0.5798529607693519,
+          "support": 450.0
+        }
+      }
+    },
+    "random_forest": {
+      "accuracy": 0.6622222222222223,
+      "precision": 0.7194444444444444,
+      "recall": 0.8354838709677419,
+      "f1": 0.7731343283582089,
+      "roc_auc": 0.601889400921659,
+      "average_precision": 0.7464587138819849,
+      "brier_score": 0.2180013629614847,
+      "log_loss": 0.6273446632154098,
+      "confusion_matrix": [
+        [
+          39,
+          101
+        ],
+        [
+          51,
+          259
+        ]
+      ],
+      "classification_report": {
+        "not_completed": {
+          "precision": 0.43333333333333335,
+          "recall": 0.2785714285714286,
+          "f1-score": 0.3391304347826087,
+          "support": 140.0
+        },
+        "completed": {
+          "precision": 0.7194444444444444,
+          "recall": 0.8354838709677419,
+          "f1-score": 0.7731343283582089,
+          "support": 310.0
+        },
+        "accuracy": 0.6622222222222223,
+        "macro avg": {
+          "precision": 0.5763888888888888,
+          "recall": 0.5570276497695852,
+          "f1-score": 0.5561323815704088,
+          "support": 450.0
+        },
+        "weighted avg": {
+          "precision": 0.6304320987654322,
+          "recall": 0.6622222222222223,
+          "f1-score": 0.6381108948013555,
+          "support": 450.0
+        }
+      }
+    },
+    "rule_based_baseline": {
+      "accuracy": 0.6644444444444444,
+      "precision": 0.7226890756302521,
+      "recall": 0.832258064516129,
+      "f1": 0.7736131934032984,
+      "roc_auc": 0.6014516129032258,
+      "average_precision": 0.758698436912068,
+      "brier_score": 0.2170625111111111,
+      "log_loss": 0.6244578308801589,
+      "confusion_matrix": [
+        [
+          41,
+          99
+        ],
+        [
+          52,
+          258
+        ]
+      ],
+      "classification_report": {
+        "not_completed": {
+          "precision": 0.44086021505376344,
+          "recall": 0.29285714285714287,
+          "f1-score": 0.351931330472103,
+          "support": 140.0
+        },
+        "completed": {
+          "precision": 0.7226890756302521,
+          "recall": 0.832258064516129,
+          "f1-score": 0.7736131934032984,
+          "support": 310.0
+        },
+        "accuracy": 0.6644444444444444,
+        "macro avg": {
+          "precision": 0.5817746453420077,
+          "recall": 0.562557603686636,
+          "f1-score": 0.5627722619377007,
+          "support": 450.0
+        },
+        "weighted avg": {
+          "precision": 0.6350089856731224,
+          "recall": 0.6644444444444444,
+          "f1-score": 0.6424232804913709,
+          "support": 450.0
+        }
+      }
+    }
+  },
+  "baseline_threshold": 0.5,
+  "limitations": [
+    "The current dataset is synthetic.",
+    "Metrics demonstrate technical feasibility, not real-world predictive validity.",
+    "The model only scores receivers that already passed hard eligibility rules."
+  ]
+}

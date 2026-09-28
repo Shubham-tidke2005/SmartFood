@@ -55,3 +55,12 @@ logs/
 Thumbs.db
 .vscode/
 .idea/
+
+
+# Generated ML datasets
+ml/data/processed/*.csv
+ml/data/processed/*.json
+
+ml/.env
+ml/.myenv
+ml/myenv

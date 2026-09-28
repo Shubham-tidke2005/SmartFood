@@ -1,6 +1,8 @@
 from django.urls import path
 
-from .views import DonationRecommendationView
+from .views import (
+    DonationRecommendationView,
+)
 
 
 app_name = "recommendations"

@@ -1,22 +1,17 @@
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.models import User
-from apps.accounts.permissions import (
-    IsVerifiedReceiver,
-)
+from apps.accounts.permissions import IsVerifiedReceiver
 from apps.notifications.models import Notification
-from apps.receivers.models import (
-    ReceiverProfile,
-    ReceiverRequirement,
+from apps.recommendations.eligibility import (
+    recheck_receiver_eligibility,
 )
 
 from .models import (
@@ -32,12 +27,9 @@ from .request_serializers import (
 )
 from .request_services import (
     cancel_approved_request_for_donation,
-    get_locked_compatible_requirement,
-    get_locked_receiver_profile,
     release_requirement_capacity,
     reserve_requirement_capacity,
     schedule_notifications,
-    validate_receiver_allocation_limit,
 )
 from .serializers import (
     DonationCancellationSerializer,
@@ -56,9 +48,7 @@ def user_is_admin(user):
     )
 
 
-def serialize_request(
-    donation_request,
-):
+def serialize_request(donation_request):
     return DonationRequestReadSerializer(
         donation_request
     ).data
@@ -109,7 +99,8 @@ class DonationRequestListView(APIView):
                 return Response(
                     {
                         "status": (
-                            "Invalid donation request status."
+                            "Invalid donation request "
+                            "status."
                         )
                     },
                     status=status.HTTP_400_BAD_REQUEST,
@@ -137,7 +128,6 @@ class DonationRequestCreateView(APIView):
         serializer = DonationRequestCreateSerializer(
             data=request.data
         )
-
         serializer.is_valid(
             raise_exception=True
         )
@@ -145,8 +135,7 @@ class DonationRequestCreateView(APIView):
         try:
             with transaction.atomic():
                 donation = get_object_or_404(
-                    Donation.objects
-                    .select_for_update(),
+                    Donation.objects.select_for_update(),
                     pk=donation_id,
                 )
 
@@ -165,9 +154,7 @@ class DonationRequestCreateView(APIView):
                                 "can receive requests."
                             )
                         },
-                        status=(
-                            status.HTTP_409_CONFLICT
-                        ),
+                        status=status.HTTP_409_CONFLICT,
                     )
 
                 if donation.donor_id == request.user.id:
@@ -178,59 +165,55 @@ class DonationRequestCreateView(APIView):
                                 "their own donation."
                             )
                         },
-                        status=(
-                            status.HTTP_400_BAD_REQUEST
-                        ),
+                        status=status.HTTP_400_BAD_REQUEST,
                     )
 
                 revision = get_object_or_404(
-                    DonationRevision.objects,
+                    DonationRevision.objects
+                    .select_for_update()
+                    .select_related("category"),
                     donation=donation,
                     is_current=True,
                 )
 
-                profile, profile_error = (
-                    get_locked_receiver_profile(
-                        request.user
-                    )
-                )
-
-                if profile_error:
+                if (
+                    revision.pickup_deadline
+                    <= timezone.now()
+                ):
                     return Response(
-                        {"detail": profile_error},
-                        status=(
-                            status.HTTP_409_CONFLICT
-                        ),
+                        {
+                            "detail": (
+                                "The pickup deadline "
+                                "has passed."
+                            )
+                        },
+                        status=status.HTTP_409_CONFLICT,
                     )
 
-                allocation_error = (
-                    validate_receiver_allocation_limit(
+                eligibility = (
+                    recheck_receiver_eligibility(
                         receiver=request.user,
-                        profile=profile,
-                    )
-                )
-
-                if allocation_error:
-                    return Response(
-                        {"detail": allocation_error},
-                        status=(
-                            status.HTTP_409_CONFLICT
-                        ),
-                    )
-
-                requirement, requirement_error = (
-                    get_locked_compatible_requirement(
-                        receiver=request.user,
+                        donation=donation,
                         revision=revision,
+                        lock=True,
                     )
                 )
 
-                if requirement_error:
+                if not eligibility.eligible:
                     return Response(
-                        {"detail": requirement_error},
-                        status=(
-                            status.HTTP_409_CONFLICT
-                        ),
+                        {
+                            "detail": (
+                                "You are no longer eligible "
+                                "to request this donation."
+                            ),
+                            "eligibility_reasons": list(
+                                eligibility.rejection_reasons
+                            ),
+                            "eligibility_checks": (
+                                eligibility.checks
+                            ),
+                        },
+                        status=status.HTTP_409_CONFLICT,
                     )
 
                 expires_at = min(
@@ -309,7 +292,9 @@ class DonationRequestCreateView(APIView):
             )
 
         return Response(
-            serialize_request(donation_request),
+            serialize_request(
+                donation_request
+            ),
             status=status.HTTP_201_CREATED,
         )
 
@@ -324,7 +309,6 @@ class DonationRequestWithdrawView(APIView):
         serializer = DonationRequestDecisionSerializer(
             data=request.data
         )
-
         serializer.is_valid(
             raise_exception=True
         )
@@ -358,14 +342,11 @@ class DonationRequestWithdrawView(APIView):
             donation_request.status = (
                 DonationRequest.Status.WITHDRAWN
             )
-            donation_request.decided_at = (
-                timezone.now()
-            )
+            donation_request.decided_at = timezone.now()
             donation_request.reason = (
                 serializer.validated_data["reason"]
                 or "Withdrawn by receiver."
             )
-
             donation_request.save(
                 update_fields=[
                     "status",
@@ -406,8 +387,7 @@ class DonationRequestWithdrawView(APIView):
                         ),
                         "data": {
                             "donation_id": str(
-                                donation_request
-                                .donation_id
+                                donation_request.donation_id
                             ),
                             "request_id": str(
                                 donation_request.id
@@ -418,7 +398,9 @@ class DonationRequestWithdrawView(APIView):
             )
 
         return Response(
-            serialize_request(donation_request)
+            serialize_request(
+                donation_request
+            )
         )
 
 
@@ -437,9 +419,8 @@ class DonationRequestApproveView(APIView):
         )
 
         with transaction.atomic():
-            # All approvals for the same donation lock
-            # this row first. This serializes simultaneous
-            # approval attempts.
+            # Always lock the donation before locking its
+            # requests. This serializes simultaneous approvals.
             donation = get_object_or_404(
                 Donation.objects.select_for_update(),
                 pk=request_reference.donation_id,
@@ -474,7 +455,9 @@ class DonationRequestApproveView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-            expire_donation_if_required(donation)
+            expire_donation_if_required(
+                donation
+            )
 
             if (
                 donation.status
@@ -517,7 +500,6 @@ class DonationRequestApproveView(APIView):
                 donation_request.reason = (
                     "The request expired before approval."
                 )
-
                 donation_request.save(
                     update_fields=[
                         "status",
@@ -537,7 +519,9 @@ class DonationRequestApproveView(APIView):
                 )
 
             current_revision = get_object_or_404(
-                DonationRevision.objects,
+                DonationRevision.objects
+                .select_for_update()
+                .select_related("category"),
                 donation=donation,
                 is_current=True,
             )
@@ -582,45 +566,44 @@ class DonationRequestApproveView(APIView):
                     status=status.HTTP_409_CONFLICT,
                 )
 
-            profile, profile_error = (
-                get_locked_receiver_profile(
-                    donation_request.receiver
-                )
+            # Capacity, availability, service area,
+            # account state, verification, compatibility,
+            # handling capability and collection feasibility
+            # are checked again immediately before approval.
+            eligibility = recheck_receiver_eligibility(
+                receiver=donation_request.receiver,
+                donation=donation,
+                revision=current_revision,
+                lock=True,
             )
 
-            if profile_error:
+            if not eligibility.eligible:
                 return Response(
-                    {"detail": profile_error},
+                    {
+                        "detail": (
+                            "The receiver is no longer "
+                            "eligible for this donation."
+                        ),
+                        "eligibility_reasons": list(
+                            eligibility.rejection_reasons
+                        ),
+                        "eligibility_checks": (
+                            eligibility.checks
+                        ),
+                    },
                     status=status.HTTP_409_CONFLICT,
                 )
 
-            allocation_error = (
-                validate_receiver_allocation_limit(
-                    receiver=(
-                        donation_request.receiver
-                    ),
-                    profile=profile,
-                )
-            )
+            requirement = eligibility.requirement
 
-            if allocation_error:
+            if requirement is None:
                 return Response(
-                    {"detail": allocation_error},
-                    status=status.HTTP_409_CONFLICT,
-                )
-
-            requirement, requirement_error = (
-                get_locked_compatible_requirement(
-                    receiver=(
-                        donation_request.receiver
-                    ),
-                    revision=current_revision,
-                )
-            )
-
-            if requirement_error:
-                return Response(
-                    {"detail": requirement_error},
+                    {
+                        "detail": (
+                            "A compatible receiver "
+                            "requirement could not be locked."
+                        )
+                    },
                     status=status.HTTP_409_CONFLICT,
                 )
 
@@ -638,7 +621,6 @@ class DonationRequestApproveView(APIView):
             donation_request.reason = (
                 "Approved by donation owner."
             )
-
             donation_request.save(
                 update_fields=[
                     "status",
@@ -658,7 +640,10 @@ class DonationRequestApproveView(APIView):
                     ),
                 )
                 .exclude(pk=donation_request.pk)
-                .values("id", "receiver_id")
+                .values(
+                    "id",
+                    "receiver_id",
+                )
             )
 
             DonationRequest.objects.filter(
@@ -676,8 +661,8 @@ class DonationRequestApproveView(APIView):
             )
 
             previous_status = donation.status
-            donation.status = Donation.Status.RESERVED
 
+            donation.status = Donation.Status.RESERVED
             donation.save(
                 update_fields=[
                     "status",
@@ -759,7 +744,9 @@ class DonationRequestApproveView(APIView):
             )
 
         return Response(
-            serialize_request(donation_request)
+            serialize_request(
+                donation_request
+            )
         )
 
 
@@ -772,7 +759,6 @@ class DonationRequestRejectView(APIView):
         serializer = DonationRequestDecisionSerializer(
             data=request.data
         )
-
         serializer.is_valid(
             raise_exception=True
         )
@@ -840,7 +826,6 @@ class DonationRequestRejectView(APIView):
                 serializer.validated_data["reason"]
                 or "Rejected by donation owner."
             )
-
             donation_request.save(
                 update_fields=[
                     "status",
@@ -888,7 +873,9 @@ class DonationRequestRejectView(APIView):
             )
 
         return Response(
-            serialize_request(donation_request)
+            serialize_request(
+                donation_request
+            )
         )
 
 
@@ -903,7 +890,6 @@ class DonationArrangementCancelView(APIView):
                 data=request.data
             )
         )
-
         serializer.is_valid(
             raise_exception=True
         )
@@ -936,8 +922,10 @@ class DonationArrangementCancelView(APIView):
 
             authorized = (
                 donation.donor_id == request.user.id
-                or donation_request.receiver_id
-                == request.user.id
+                or (
+                    donation_request.receiver_id
+                    == request.user.id
+                )
                 or user_is_admin(request.user)
             )
 
@@ -985,7 +973,6 @@ class DonationArrangementCancelView(APIView):
                 cancellation_time
             )
             donation_request.reason = reason
-
             donation_request.save(
                 update_fields=[
                     "status",
@@ -1025,9 +1012,7 @@ class DonationArrangementCancelView(APIView):
             record_donation_history(
                 donation=donation,
                 actor=request.user,
-                event_type=(
-                    "ARRANGEMENT_CANCELLED"
-                ),
+                event_type="ARRANGEMENT_CANCELLED",
                 from_status=previous_status,
                 to_status=donation.status,
                 reason=reason,
@@ -1037,8 +1022,9 @@ class DonationArrangementCancelView(APIView):
                 donation.donor_id,
                 donation_request.receiver_id,
             }
-
-            recipient_ids.discard(request.user.id)
+            recipient_ids.discard(
+                request.user.id
+            )
 
             schedule_notifications(
                 [
@@ -1066,7 +1052,9 @@ class DonationArrangementCancelView(APIView):
             )
 
         return Response(
-            serialize_request(donation_request)
+            serialize_request(
+                donation_request
+            )
         )
 
 
@@ -1079,7 +1067,6 @@ class DonationCancelView(APIView):
         serializer = DonationCancellationSerializer(
             data=request.data
         )
-
         serializer.is_valid(
             raise_exception=True
         )
@@ -1110,7 +1097,9 @@ class DonationCancelView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-            expire_donation_if_required(donation)
+            expire_donation_if_required(
+                donation
+            )
 
             if donation.status not in {
                 Donation.Status.AVAILABLE,
@@ -1128,15 +1117,13 @@ class DonationCancelView(APIView):
 
             previous_status = donation.status
 
-            approved_request = (
-                cancel_approved_request_for_donation(
-                    donation=donation,
-                    actor=request.user,
-                    reason=(
-                        "Donation cancelled: "
-                        f"{reason}"
-                    ),
-                )
+            cancel_approved_request_for_donation(
+                donation=donation,
+                actor=request.user,
+                reason=(
+                    "Donation cancelled: "
+                    f"{reason}"
+                ),
             )
 
             current_time = timezone.now()
@@ -1150,7 +1137,10 @@ class DonationCancelView(APIView):
                         DonationRequest.Status.PENDING
                     ),
                 )
-                .values("id", "receiver_id")
+                .values(
+                    "id",
+                    "receiver_id",
+                )
             )
 
             DonationRequest.objects.filter(
@@ -1169,7 +1159,6 @@ class DonationCancelView(APIView):
                 Donation.Status.CANCELLED
             )
             donation.closed_at = current_time
-
             donation.save(
                 update_fields=[
                     "status",
@@ -1216,7 +1205,9 @@ class DonationCancelView(APIView):
                     }
                 )
 
-            schedule_notifications(events)
+            schedule_notifications(
+                events
+            )
 
         return Response(
             DonationReadSerializer(

@@ -17,7 +17,10 @@ from .serializers import (
 from .services import generate_recommendations
 
 
-def user_can_view_recommendations(user, donation):
+def user_can_view_recommendations(
+    user,
+    donation,
+):
     if donation.donor_id == user.id:
         return True
 
@@ -38,7 +41,11 @@ class DonationRecommendationView(APIView):
             pk=donation_id,
         )
 
-    def check_access(self, request, donation):
+    def check_access(
+        self,
+        request,
+        donation,
+    ):
         return user_can_view_recommendations(
             request.user,
             donation,
@@ -61,7 +68,9 @@ class DonationRecommendationView(APIView):
                         "these recommendations."
                     )
                 },
-                status=status.HTTP_403_FORBIDDEN,
+                status=(
+                    status.HTTP_403_FORBIDDEN
+                ),
             )
 
         recommendation_run = (
@@ -73,8 +82,14 @@ class DonationRecommendationView(APIView):
                     .COMPLETED
                 ),
             )
+            .select_related(
+                "donation",
+                "revision",
+                "requested_by",
+            )
             .prefetch_related(
-                "candidates__receiver"
+                "candidates__receiver",
+                "evaluations__receiver",
             )
             .first()
         )
@@ -87,11 +102,15 @@ class DonationRecommendationView(APIView):
                         "for this donation."
                     )
                 },
-                status=status.HTTP_404_NOT_FOUND,
+                status=(
+                    status.HTTP_404_NOT_FOUND
+                ),
             )
 
-        serializer = RecommendationRunSerializer(
-            recommendation_run
+        serializer = (
+            RecommendationRunSerializer(
+                recommendation_run
+            )
         )
 
         return Response(serializer.data)
@@ -113,7 +132,9 @@ class DonationRecommendationView(APIView):
                         "recommendations."
                     )
                 },
-                status=status.HTTP_403_FORBIDDEN,
+                status=(
+                    status.HTTP_403_FORBIDDEN
+                ),
             )
 
         try:
@@ -125,12 +146,18 @@ class DonationRecommendationView(APIView):
             )
         except ValueError as error:
             return Response(
-                {"detail": str(error)},
-                status=status.HTTP_409_CONFLICT,
+                {
+                    "detail": str(error)
+                },
+                status=(
+                    status.HTTP_409_CONFLICT
+                ),
             )
 
-        serializer = RecommendationRunSerializer(
-            recommendation_run
+        serializer = (
+            RecommendationRunSerializer(
+                recommendation_run
+            )
         )
 
         return Response(

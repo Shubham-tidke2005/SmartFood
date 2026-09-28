@@ -1,359 +1,72 @@
-from decimal import Decimal
-from math import asin, cos, radians, sin, sqrt
+import logging
+
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 
-from apps.accounts.models import User
-from apps.donations.models import (
-    Donation,
-    DonationRequest,
-)
-from apps.receivers.models import (
-    ReceiverAvailability,
-    ReceiverPreference,
-    ReceiverProfile,
-    ReceiverRequirement,
-    ServiceArea,
-)
+from apps.donations.models import Donation
 
+from .config import (
+    get_baseline_configuration,
+    weights_for_json,
+)
+from .features import (
+    build_baseline_features,
+    build_considered_feature_snapshot,
+    get_all_candidate_decisions,
+)
+from .inference import (
+    ModelInferenceError,
+    score_candidates_with_model,
+)
 from .models import (
     RecommendationCandidate,
+    RecommendationEvaluation,
     RecommendationRun,
 )
 
 
-WEIGHTS = {
-    "category_compatibility": 30,
-    "capacity": 25,
-    "distance": 20,
-    "availability": 15,
-    "successful_history": 10,
-}
+logger = logging.getLogger(__name__)
+
+SCORE_QUANTIZER = Decimal("0.01")
 
 
-def normalize_area(value):
-    return " ".join(
-        (value or "").strip().lower().split()
-    )
-
-
-def calculate_distance_km(area_one, area_two):
-    earth_radius = 6371.0088
-
-    latitude_one = radians(
-        float(area_one.latitude)
-    )
-    longitude_one = radians(
-        float(area_one.longitude)
-    )
-    latitude_two = radians(
-        float(area_two.latitude)
-    )
-    longitude_two = radians(
-        float(area_two.longitude)
-    )
-
-    latitude_difference = (
-        latitude_two - latitude_one
-    )
-    longitude_difference = (
-        longitude_two - longitude_one
-    )
-
-    value = (
-        sin(latitude_difference / 2) ** 2
-        + cos(latitude_one)
-        * cos(latitude_two)
-        * sin(longitude_difference / 2) ** 2
+def calculate_baseline_score(
+    *,
+    normalized_features,
+    weights,
+):
+    weighted_score = sum(
+        normalized_features[feature_name]
+        * weights[feature_name]
+        for feature_name in weights
     )
 
     return (
-        2
-        * earth_radius
-        * asin(sqrt(value))
+        weighted_score
+        * Decimal("100")
+    ).quantize(
+        SCORE_QUANTIZER,
+        rounding=ROUND_HALF_UP,
     )
 
 
-def find_pickup_service_area(pickup_area):
-    normalized_pickup_area = normalize_area(
-        pickup_area
-    )
-
-    if not normalized_pickup_area:
-        return None
-
-    for service_area in ServiceArea.objects.filter(
-        active=True
-    ):
-        possible_values = {
-            normalize_area(service_area.code),
-            normalize_area(service_area.name),
-        }
-
-        if normalized_pickup_area in possible_values:
-            return service_area
-
-    return None
-
-
-def receiver_is_available(receiver, current_time=None):
-    current_time = current_time or timezone.localtime()
-
-    weekday = current_time.weekday()
-    local_time = current_time.time()
-
-    availability_windows = (
-        ReceiverAvailability.objects.filter(
-            receiver=receiver,
-            active=True,
-        )
-    )
-
-    for window in availability_windows:
-        if window.starts_at <= window.ends_at:
-            if (
-                window.weekday == weekday
-                and window.starts_at
-                <= local_time
-                <= window.ends_at
-            ):
-                return True
-        else:
-            if (
-                window.weekday == weekday
-                and local_time >= window.starts_at
-            ):
-                return True
-
-            if (
-                (window.weekday + 1) % 7
-                == weekday
-                and local_time <= window.ends_at
-            ):
-                return True
-
-    return False
-
-
-def receiver_has_allocation_capacity(
-    receiver,
-    profile,
+def build_explanations(
+    *,
+    decision,
+    revision,
+    feature_snapshot,
 ):
-    active_statuses = [
-        Donation.Status.RESERVED,
-        Donation.Status.PICKED_UP,
-        Donation.Status.DELIVERED,
+    normalized = feature_snapshot[
+        "normalized_features"
     ]
 
-    active_allocation_count = (
-        DonationRequest.objects.filter(
-            receiver=receiver,
-            status=DonationRequest.Status.APPROVED,
-            donation__status__in=active_statuses,
-        )
-        .values("donation_id")
-        .distinct()
-        .count()
+    distance = (
+        decision.approximate_distance_km
     )
 
-    return (
-        active_allocation_count
-        < profile.max_active_allocations
-    )
-
-
-def get_receiver_requirement(
-    receiver,
-    revision,
-):
-    today = timezone.localdate()
-
-    return (
-        ReceiverRequirement.objects.filter(
-            receiver=receiver,
-            category=revision.category,
-            unit=revision.unit,
-            active=True,
-        )
-        .filter(
-            Q(needed_until__isnull=True)
-            | Q(needed_until__gte=today)
-        )
-        .order_by("needed_until")
-        .first()
-    )
-
-
-def calculate_capacity_score(
-    remaining_quantity,
-    donation_quantity,
-):
-    if donation_quantity <= 0:
-        return 0.0
-
-    ratio = float(
-        remaining_quantity / donation_quantity
-    )
-
-    normalized_ratio = min(ratio, 2.0) / 2.0
-
-    return (
-        normalized_ratio
-        * WEIGHTS["capacity"]
-    )
-
-
-def calculate_distance_score(
-    distance,
-    maximum_distance,
-):
-    if distance is None:
-        return 5.0
-
-    maximum_distance = float(maximum_distance)
-
-    if maximum_distance <= 0:
-        return 0.0
-
-    normalized_distance = min(
-        distance / maximum_distance,
-        1.0,
-    )
-
-    return (
-        1.0 - normalized_distance
-    ) * WEIGHTS["distance"]
-
-
-def calculate_history_score(
-    donation,
-    receiver,
-):
-    successful_count = (
-        DonationRequest.objects.filter(
-            receiver=receiver,
-            status=DonationRequest.Status.APPROVED,
-            donation__donor=donation.donor,
-            donation__status=Donation.Status.COMPLETED,
-        )
-        .values("donation_id")
-        .distinct()
-        .count()
-    )
-
-    normalized_count = min(
-        successful_count,
-        5,
-    ) / 5
-
-    score = (
-        normalized_count
-        * WEIGHTS["successful_history"]
-    )
-
-    return score, successful_count
-
-
-def build_candidate(
-    *,
-    donation,
-    revision,
-    profile,
-    pickup_service_area,
-):
-    receiver = profile.user
-
-    category_accepted = (
-        ReceiverPreference.objects.filter(
-            receiver=receiver,
-            category=revision.category,
-            active=True,
-        ).exists()
-    )
-
-    if not category_accepted:
-        return None
-
-    requirement = get_receiver_requirement(
-        receiver,
-        revision,
-    )
-
-    if requirement is None:
-        return None
-
-    remaining_quantity = (
-        requirement.remaining_quantity
-    )
-
-    if remaining_quantity < revision.quantity:
-        return None
-
-    if not receiver_is_available(receiver):
-        return None
-
-    if not receiver_has_allocation_capacity(
-        receiver,
-        profile,
-    ):
-        return None
-
-    approximate_distance = None
-
-    if (
-        pickup_service_area is not None
-        and profile.service_area is not None
-    ):
-        approximate_distance = (
-            calculate_distance_km(
-                pickup_service_area,
-                profile.service_area,
-            )
-        )
-
-        if (
-            approximate_distance
-            > float(
-                profile.max_service_distance_km
-            )
-        ):
-            return None
-
-    category_score = float(
-        WEIGHTS["category_compatibility"]
-    )
-
-    capacity_score = calculate_capacity_score(
-        remaining_quantity,
-        revision.quantity,
-    )
-
-    availability_score = float(
-        WEIGHTS["availability"]
-    )
-
-    distance_score = calculate_distance_score(
-        approximate_distance,
-        profile.max_service_distance_km,
-    )
-
-    history_score, successful_count = (
-        calculate_history_score(
-            donation,
-            receiver,
-        )
-    )
-
-    total_score = round(
-        category_score
-        + capacity_score
-        + availability_score
-        + distance_score
-        + history_score,
-        2,
-    )
+    requirement = decision.requirement
 
     explanations = [
         (
@@ -361,82 +74,188 @@ def build_candidate(
             f"{revision.category.name} category."
         ),
         (
-            f"Has {remaining_quantity} "
+            f"Has "
+            f"{requirement.remaining_quantity} "
             f"{revision.unit} remaining capacity."
         ),
-        "Currently available to receive food.",
+        (
+            f"Approximately {distance} km away "
+            f"by straight-line distance."
+        ),
+        (
+            "Availability overlaps "
+            f"{normalized['availability_overlap'] * 100:.1f}% "
+            "of the pickup window."
+        ),
+        (
+            "Transport readiness is "
+            f"{normalized['transport_readiness'] * 100:.1f}% "
+            "based on active allocation capacity."
+        ),
+        (
+            "The donation satisfies approximately "
+            f"{normalized['quantity_match'] * 100:.1f}% "
+            "of the receiver's remaining requirement."
+        ),
     ]
 
-    if approximate_distance is None:
-        explanations.append(
-            "Approximate distance could not be "
-            "calculated from the available area data."
-        )
-    else:
-        explanations.append(
-            f"Approximately "
-            f"{approximate_distance:.2f} km away "
-            f"by straight-line distance."
+    return explanations
+
+
+def prepare_scored_candidates(
+    *,
+    decisions,
+    revision,
+    weights,
+):
+    prepared = []
+
+    for decision in decisions:
+        receiver = decision.profile.user
+
+        if not decision.eligible:
+            prepared.append(
+                {
+                    "receiver": receiver,
+                    "decision": decision,
+                    "eligible": False,
+                    "score": None,
+                    "baseline_score": None,
+                    "feature_snapshot": (
+                        build_considered_feature_snapshot(
+                            decision=decision,
+                            revision=revision,
+                        )
+                    ),
+                    "explanations": [],
+                }
+            )
+
+            continue
+
+        (
+            normalized_features,
+            feature_snapshot,
+        ) = build_baseline_features(
+            decision=decision,
+            revision=revision,
         )
 
-    if successful_count > 0:
-        explanations.append(
-            f"{successful_count} previous successful "
-            f"interaction(s) with this donor."
-        )
-    else:
-        explanations.append(
-            "No previous completed interaction with "
-            "this donor."
+        baseline_score = (
+            calculate_baseline_score(
+                normalized_features=(
+                    normalized_features
+                ),
+                weights=weights,
+            )
         )
 
-    organization_name = (
-        profile.organization_name
-        or receiver.display_name
+        feature_snapshot[
+            "baseline_score"
+        ] = str(baseline_score)
+
+        prepared.append(
+            {
+                "receiver": receiver,
+                "decision": decision,
+                "eligible": True,
+                "score": baseline_score,
+                "baseline_score": (
+                    baseline_score
+                ),
+                "feature_snapshot": (
+                    feature_snapshot
+                ),
+                "explanations": (
+                    build_explanations(
+                        decision=decision,
+                        revision=revision,
+                        feature_snapshot=(
+                            feature_snapshot
+                        ),
+                    )
+                ),
+            }
+        )
+
+    return prepared
+
+
+def try_model_scoring(
+    *,
+    candidates,
+    revision,
+    baseline_version,
+):
+    """
+    Return ML scores when inference succeeds.
+
+    Any model-loading or inference failure returns the
+    baseline candidates instead.
+    """
+    eligible_exists = any(
+        candidate["eligible"]
+        for candidate in candidates
     )
 
-    return {
-        "receiver": receiver,
-        "score": total_score,
-        "distance": approximate_distance,
-        "remaining_capacity": remaining_quantity,
-        "feature_snapshot": {
-            "receiver_id": str(receiver.id),
-            "organization_name": organization_name,
-            "category_compatible": True,
-            "category_score": round(
-                category_score,
-                2,
+    if not eligible_exists:
+        return {
+            "candidates": candidates,
+            "algorithm": (
+                RecommendationRun.Algorithm
+                .RULE_BASED_V2
             ),
-            "capacity_score": round(
-                capacity_score,
-                2,
+            "model_version": baseline_version,
+            "fallback_error": "",
+        }
+
+    try:
+        result = score_candidates_with_model(
+            candidates=candidates,
+            revision=revision,
+        )
+
+        return {
+            "candidates": result["candidates"],
+            "algorithm": (
+                RecommendationRun.Algorithm
+                .ML_COMPLETION_V1
             ),
-            "availability_score": round(
-                availability_score,
-                2,
+            "model_version": (
+                result["model_version"]
             ),
-            "distance_score": round(
-                distance_score,
-                2,
+            "fallback_error": "",
+        }
+
+    except Exception as error:
+        # This block intentionally protects normal platform
+        # operation from missing, corrupt or incompatible
+        # model artifacts.
+        logger.exception(
+            "ML recommendation inference failed. "
+            "Using the rule-based baseline."
+        )
+
+        if isinstance(
+            error,
+            ModelInferenceError,
+        ):
+            message = str(error)
+        else:
+            message = (
+                "Unexpected inference failure: "
+                f"{type(error).__name__}"
+            )
+
+        return {
+            "candidates": candidates,
+            "algorithm": (
+                RecommendationRun.Algorithm
+                .RULE_BASED_V2
             ),
-            "history_score": round(
-                history_score,
-                2,
-            ),
-            "successful_interactions": (
-                successful_count
-            ),
-            "unit": revision.unit,
-            "donation_quantity": str(
-                revision.quantity
-            ),
-            "remaining_capacity": str(
-                remaining_quantity
-            ),
-        },
-        "explanations": explanations,
-    }
+            "model_version": baseline_version,
+            "fallback_error": message[:2000],
+        }
 
 
 @transaction.atomic
@@ -445,6 +264,13 @@ def generate_recommendations(
     donation,
     requested_by,
 ):
+    """
+    Generate receiver recommendations.
+
+    Hard eligibility is always applied first. The ML model
+    scores only eligible candidates. If ML inference fails,
+    the rule-based baseline completes the recommendation run.
+    """
     locked_donation = (
         Donation.objects
         .select_for_update()
@@ -473,100 +299,166 @@ def generate_recommendations(
             "The donation has no current revision."
         )
 
-    if revision.pickup_deadline <= timezone.now():
+    if (
+        revision.pickup_starts_at
+        >= revision.pickup_deadline
+    ):
+        raise ValueError(
+            "The donation pickup window is invalid."
+        )
+
+    if (
+        revision.pickup_deadline
+        <= timezone.now()
+    ):
         raise ValueError(
             "Recommendations cannot be generated "
             "after the pickup deadline."
         )
 
-    pickup_service_area = (
-        find_pickup_service_area(
-            revision.pickup_area
-        )
+    configuration = (
+        get_baseline_configuration()
     )
 
-    profiles = (
-        ReceiverProfile.objects
-        .select_related(
-            "user",
-            "service_area",
-        )
-        .filter(
-            operational=True,
-            user__role=User.Role.RECEIVER,
-            user__is_active=True,
-            user__contact_verified_at__isnull=False,
-            user__verification_status=(
-                User.VerificationStatus.VERIFIED
-            ),
-            service_area__active=True,
-        )
+    weights = configuration["weights"]
+
+    baseline_version = (
+        configuration["version"]
     )
 
-    scored_candidates = []
+    decisions = get_all_candidate_decisions(
+        donation=locked_donation,
+        revision=revision,
+    )
 
-    for profile in profiles:
-        candidate = build_candidate(
-            donation=locked_donation,
+    prepared_candidates = (
+        prepare_scored_candidates(
+            decisions=decisions,
             revision=revision,
-            profile=profile,
-            pickup_service_area=(
-                pickup_service_area
-            ),
+            weights=weights,
         )
+    )
 
-        if candidate is not None:
-            scored_candidates.append(candidate)
+    scoring_result = try_model_scoring(
+        candidates=prepared_candidates,
+        revision=revision,
+        baseline_version=baseline_version,
+    )
 
-    scored_candidates.sort(
-        key=lambda item: item["score"],
-        reverse=True,
+    prepared_candidates = scoring_result[
+        "candidates"
+    ]
+
+    eligible_candidates = [
+        candidate
+        for candidate in prepared_candidates
+        if candidate["eligible"]
+    ]
+
+    eligible_candidates.sort(
+        key=lambda candidate: (
+            -candidate["score"],
+            candidate[
+                "decision"
+            ].approximate_distance_km,
+            str(candidate["receiver"].id),
+        )
     )
 
     run = RecommendationRun.objects.create(
         donation=locked_donation,
         revision=revision,
         requested_by=requested_by,
-        algorithm=(
-            RecommendationRun.Algorithm
-            .RULE_BASED_V1
+        algorithm=scoring_result[
+            "algorithm"
+        ],
+        model_version=scoring_result[
+            "model_version"
+        ],
+        status=(
+            RecommendationRun.Status.COMPLETED
         ),
-        model_version="baseline-1.0",
-        status=RecommendationRun.Status.COMPLETED,
-        weights=WEIGHTS,
-        candidate_count=len(scored_candidates),
+        weights=weights_for_json(weights),
+        considered_count=len(
+            prepared_candidates
+        ),
+        eligible_count=len(
+            eligible_candidates
+        ),
+        candidate_count=len(
+            eligible_candidates
+        ),
+        error_message=scoring_result[
+            "fallback_error"
+        ],
+    )
+
+    evaluation_records = []
+
+    for candidate in prepared_candidates:
+        decision = candidate["decision"]
+
+        evaluation_records.append(
+            RecommendationEvaluation(
+                run=run,
+                receiver=(
+                    candidate["receiver"]
+                ),
+                eligible=(
+                    candidate["eligible"]
+                ),
+                rejection_reasons=list(
+                    decision.rejection_reasons
+                ),
+                eligibility_checks=(
+                    decision.checks
+                ),
+                feature_snapshot=(
+                    candidate[
+                        "feature_snapshot"
+                    ]
+                ),
+                baseline_score=(
+                    candidate[
+                        "baseline_score"
+                    ]
+                ),
+            )
+        )
+
+    RecommendationEvaluation.objects.bulk_create(
+        evaluation_records
     )
 
     candidate_records = []
 
-    for index, candidate in enumerate(
-        scored_candidates,
+    for rank, candidate in enumerate(
+        eligible_candidates,
         start=1,
     ):
-        distance = candidate["distance"]
+        decision = candidate["decision"]
 
         candidate_records.append(
             RecommendationCandidate(
                 run=run,
-                receiver=candidate["receiver"],
-                rank=index,
-                score=Decimal(
-                    str(candidate["score"])
+                receiver=(
+                    candidate["receiver"]
                 ),
+                rank=rank,
+                score=candidate["score"],
                 approximate_distance_km=(
-                    Decimal(
-                        str(round(distance, 2))
-                    )
-                    if distance is not None
-                    else None
+                    decision
+                    .approximate_distance_km
                 ),
                 remaining_capacity=(
-                    candidate[
-                        "remaining_capacity"
-                    ]
+                    decision
+                    .requirement
+                    .remaining_quantity
                 ),
                 feature_snapshot=(
-                    candidate["feature_snapshot"]
+                    candidate[
+                        "feature_snapshot"
+                    ]
                 ),
                 explanations=(
                     candidate["explanations"]
@@ -580,6 +472,14 @@ def generate_recommendations(
 
     return (
         RecommendationRun.objects
-        .prefetch_related("candidates__receiver")
+        .select_related(
+            "donation",
+            "revision",
+            "requested_by",
+        )
+        .prefetch_related(
+            "candidates__receiver",
+            "evaluations__receiver",
+        )
         .get(pk=run.pk)
     )

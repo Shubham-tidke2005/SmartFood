@@ -6,10 +6,18 @@ import {
   Scale,
 } from "lucide-react";
 
-import { Link } from "react-router-dom";
-import { motion } from "motion/react";
+import {
+  Link,
+} from "react-router-dom";
 
-import { cn } from "../../lib/cn";
+import {
+  motion,
+} from "motion/react";
+
+import {
+  cn,
+} from "../../lib/cn";
+
 import Button from "./Button";
 
 import {
@@ -22,6 +30,72 @@ import {
 } from "./LoadingState";
 
 import StatusBadge from "./StatusBadge";
+
+
+function getRevision(item) {
+  return (
+    item?.current_revision ||
+    item?.revision ||
+    item ||
+    {}
+  );
+}
+
+
+function itemTitle(item) {
+  const revision =
+    getRevision(item);
+
+  return (
+    revision.food_name ||
+    item?.category_name ||
+    item?.category?.name ||
+    (
+      typeof item?.category ===
+      "string"
+        ? item.category
+        : null
+    ) ||
+    item?.title ||
+    item?.organization_name ||
+    item?.display_name ||
+    item?.name ||
+    item?.task_number ||
+    item?.email ||
+    "SmartFood record"
+  );
+}
+
+
+function itemDescription(item) {
+  const revision =
+    getRevision(item);
+
+  return (
+    revision.description ||
+    item?.message ||
+    item?.reason ||
+    item?.email ||
+    revision.pickup_area ||
+    "No additional description"
+  );
+}
+
+
+function formatDate(value) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+
+  return Number.isNaN(
+    date.getTime(),
+  )
+    ? ""
+    : date.toLocaleString();
+}
+
 
 export function PageHeader({
   eyebrow,
@@ -54,6 +128,7 @@ export function PageHeader({
   );
 }
 
+
 export function Surface({
   children,
   className,
@@ -72,6 +147,7 @@ export function Surface({
   );
 }
 
+
 export function MetricCard({
   label,
   value,
@@ -81,9 +157,6 @@ export function MetricCard({
   const colors = {
     blue:
       "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",
-
-    sky:
-      "bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300",
 
     emerald:
       "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
@@ -121,202 +194,58 @@ export function MetricCard({
   );
 }
 
-function getCategoryName(item) {
-  if (item.category_name) {
-    return item.category_name;
-  }
-
-  if (
-    item.category &&
-    typeof item.category === "object"
-  ) {
-    return (
-      item.category.name ||
-      item.category.code ||
-      ""
-    );
-  }
-
-  if (
-    typeof item.category === "string"
-  ) {
-    return item.category;
-  }
-
-  return "";
-}
-
-function itemTitle(item) {
-  return (
-    item.food_name ||
-    item.title ||
-    item.organization_name ||
-    item.display_name ||
-    getCategoryName(item) ||
-    item.name ||
-    item.task_number ||
-    item.email ||
-    "SmartFood record"
-  );
-}
-
-function getRemainingQuantity(item) {
-  if (
-    item.remaining_quantity !==
-      undefined &&
-    item.remaining_quantity !== null
-  ) {
-    return item.remaining_quantity;
-  }
-
-  if (
-    item.quantity_needed !==
-      undefined &&
-    item.quantity_reserved !==
-      undefined
-  ) {
-    return Math.max(
-      0,
-      Number(
-        item.quantity_needed,
-      ) -
-        Number(
-          item.quantity_reserved,
-        ),
-    );
-  }
-
-  return null;
-}
-
-function itemDescription(item) {
-  if (
-    item.quantity_needed !==
-      undefined &&
-    item.quantity_needed !== null
-  ) {
-    const remaining =
-      getRemainingQuantity(item);
-
-    const unit =
-      item.unit || "";
-
-    const totalText =
-      `${item.quantity_needed} ${unit}`;
-
-    if (remaining !== null) {
-      return (
-        `${remaining} ${unit} remaining ` +
-        `from ${totalText}`
-      );
-    }
-
-    return `${totalText} required`;
-  }
-
-  if (
-    item.quantity !== undefined &&
-    item.quantity !== null
-  ) {
-    return `${item.quantity} ${item.unit || ""}`;
-  }
-
-  return (
-    item.description ||
-    item.message ||
-    item.reason ||
-    item.email ||
-    item.pickup_area ||
-    "No additional description"
-  );
-}
-
-function getItemStatus(item) {
-  if (item.status) {
-    return item.status;
-  }
-
-  if (item.verification_status) {
-    return item.verification_status;
-  }
-
-  if (item.task_status) {
-    return item.task_status;
-  }
-
-  if (item.active === true) {
-    return "ACTIVE";
-  }
-
-  if (item.active === false) {
-    return "INACTIVE";
-  }
-
-  return "";
-}
-
-function getDeadline(item) {
-  return (
-    item.pickup_deadline ||
-    item.needed_until ||
-    item.delivery_deadline ||
-    item.created_at ||
-    null
-  );
-}
-
-function getLocation(item) {
-  if (
-    typeof item.location === "string"
-  ) {
-    return item.location;
-  }
-
-  return (
-    item.pickup_area ||
-    item.address ||
-    item.service_area_name ||
-    item.location?.formatted_address ||
-    ""
-  );
-}
-
-function formatDate(value) {
-  if (!value) {
-    return "";
-  }
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return date.toLocaleString(
-    "en-IN",
-  );
-}
 
 export function ResourceCard({
   item,
   detailPath,
   actions,
 }) {
+  const revision =
+    getRevision(item);
+
   const status =
-    getItemStatus(item);
+    item?.status ||
+    item?.verification_status ||
+    item?.task_status ||
+    (
+      typeof item?.active ===
+      "boolean"
+        ? item.active
+          ? "ACTIVE"
+          : "INACTIVE"
+        : null
+    );
 
   const deadline =
-    getDeadline(item);
+    revision.pickup_deadline ||
+    item?.needed_until ||
+    item?.created_at;
 
   const location =
-    getLocation(item);
+    revision.pickup_area ||
+    revision.pickup_location ||
+    item?.location ||
+    item?.address;
 
-  const remainingQuantity =
-    getRemainingQuantity(item);
+  const quantity =
+    revision.quantity ??
+    item?.remaining_quantity ??
+    item?.quantity_remaining ??
+    item?.quantity_needed;
+
+  const unit =
+    revision.unit ||
+    item?.unit ||
+    "";
+
+  const formattedDeadline =
+    formatDate(deadline);
 
   const content = (
     <motion.article
-      whileHover={{ y: -4 }}
+      whileHover={{
+        y: -4,
+      }}
       transition={{
         duration: 0.18,
       }}
@@ -346,17 +275,14 @@ export function ResourceCard({
       </p>
 
       <div className="mt-4 space-y-2 text-sm text-slate-600 dark:text-slate-300">
-        {remainingQuantity !== null && (
-          <p className="flex items-center gap-2">
+        {quantity != null && (
+          <p className="flex items-center gap-2 font-semibold">
             <Scale
               aria-hidden="true"
               className="size-4 text-emerald-500"
             />
 
-            <span>
-              {remainingQuantity}{" "}
-              {item.unit || ""} remaining
-            </span>
+            {quantity} {unit}
           </p>
         )}
 
@@ -364,7 +290,7 @@ export function ResourceCard({
           <p className="flex items-center gap-2">
             <MapPin
               aria-hidden="true"
-              className="size-4 shrink-0 text-sky-500"
+              className="size-4 text-sky-500"
             />
 
             <span className="line-clamp-1">
@@ -373,19 +299,16 @@ export function ResourceCard({
           </p>
         )}
 
-        {deadline &&
-          formatDate(deadline) && (
-            <p className="flex items-center gap-2">
-              <CalendarClock
-                aria-hidden="true"
-                className="size-4 shrink-0 text-amber-500"
-              />
+        {formattedDeadline && (
+          <p className="flex items-center gap-2">
+            <CalendarClock
+              aria-hidden="true"
+              className="size-4 text-amber-500"
+            />
 
-              <span>
-                {formatDate(deadline)}
-              </span>
-            </p>
-          )}
+            {formattedDeadline}
+          </p>
+        )}
       </div>
 
       {actions && (
@@ -425,6 +348,7 @@ export function ResourceCard({
     </Link>
   );
 }
+
 
 export function ResourceGrid({
   items,
@@ -483,7 +407,7 @@ export function ResourceGrid({
             key={
               item.id ||
               item.uuid ||
-              `${itemTitle(item)}-${index}`
+              index
             }
             item={item}
             detailPath={
@@ -502,6 +426,7 @@ export function ResourceGrid({
     </div>
   );
 }
+
 
 export function SubmitBar({
   submitLabel,

@@ -287,3 +287,44 @@ SMARTFOOD_JOB_LOCK_TIMEOUT_MINUTES = env.int(
 DEFAULT_AUTO_FIELD = (
     "django.db.models.BigAutoField"
 )
+
+
+SMARTFOOD_RECOMMENDATIONS = {
+    "BASELINE_VERSION": "baseline-2.0",
+    "BASELINE_WEIGHTS": {
+        "distance": 0.30,
+        "quantity_match": 0.30,
+        "availability_overlap": 0.20,
+        "transport_readiness": 0.20,
+    },
+}
+
+
+SMARTFOOD_ML = {
+    "ENABLED": env.bool(
+        "SMARTFOOD_ML_ENABLED",
+        default=True,
+    ),
+    "PIPELINE_PATH": env(
+        "SMARTFOOD_ML_PIPELINE_PATH",
+        default=str(
+            BASE_DIR.parent
+            / "ml"
+            / "models"
+            / "completion_pipeline.joblib"
+        ),
+    ),
+    "METADATA_PATH": env(
+        "SMARTFOOD_ML_METADATA_PATH",
+        default=str(
+            BASE_DIR.parent
+            / "ml"
+            / "models"
+            / "model_metadata.json"
+        ),
+    ),
+    "VERIFY_ARTIFACT_HASH": env.bool(
+        "SMARTFOOD_ML_VERIFY_HASH",
+        default=True,
+    ),
+}
