@@ -4,6 +4,7 @@ import {
 } from "react";
 
 import {
+  Link,
   useNavigate,
   useParams,
 } from "react-router-dom";
@@ -824,6 +825,22 @@ export function ReceiverRequestsPage() {
         onRetry={resource.reload}
         emptyTitle="No donation requests"
         emptyDescription="Browse available donations and submit a request."
+        renderActions={(item) =>
+          item.status === "APPROVED" ? (
+            <Link
+              to={
+                item.proposed_mode === "VOLUNTEER_DELIVERY"
+                  ? `/receiver/receipts/${item.donation}`
+                  : `/fulfilment/${item.donation}`
+              }
+              className="focus-ring inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700"
+            >
+              {item.proposed_mode === "VOLUNTEER_DELIVERY"
+                ? "Confirm delivered food"
+                : "Manage receipt"}
+            </Link>
+          ) : null
+        }
       />
     </div>
   );
@@ -833,6 +850,12 @@ export function ReceiverRequestsPage() {
 export function ReceiptConfirmationPage() {
   const { donationId } =
     useParams();
+
+  const {
+    data: requests,
+    loading: requestsLoading,
+    error: requestsError,
+  } = useApiResource("/donations/requests/", { list: true });
 
   const navigate =
     useNavigate();
@@ -875,6 +898,29 @@ export function ReceiptConfirmationPage() {
   ) {
     event.preventDefault();
 
+    if (requestsLoading || requestsError) {
+      setError(requestsError || "Loading your approved request. Please try again.");
+      return;
+    }
+
+    const approvedRequest = requests.find(
+      (item) => String(item.donation) === String(donationId)
+        && item.status === "APPROVED",
+    );
+
+    if (!approvedRequest) {
+      setError("No approved request exists for this donation.");
+      return;
+    }
+
+    const volunteerDelivery =
+      approvedRequest.proposed_mode === "VOLUNTEER_DELIVERY";
+
+    if (volunteerDelivery && !approvedRequest.volunteer_task_id) {
+      setError("The volunteer delivery task is not ready yet.");
+      return;
+    }
+
     const acceptedQuantity =
       Number(
         form.accepted_quantity,
@@ -910,7 +956,9 @@ export function ReceiptConfirmationPage() {
 
     try {
       await api.post(
-        `/logistics/donations/${donationId}/receipt/`,
+        volunteerDelivery
+          ? `/logistics/volunteer/tasks/${approvedRequest.volunteer_task_id}/confirm-receipt/`
+          : `/logistics/donations/${donationId}/receipt/`,
         {
           accepted_quantity:
             acceptedQuantity,

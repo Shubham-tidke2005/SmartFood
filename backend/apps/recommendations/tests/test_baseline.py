@@ -1,7 +1,11 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 
-from django.test import TestCase
+from django.test import (
+    TestCase,
+    override_settings,
+)
+
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -26,6 +30,11 @@ from apps.recommendations.services import (
     generate_recommendations,
 )
 
+@override_settings(
+    SMARTFOOD_ML={
+        "ENABLED": False,
+    }
+)
 
 class RuleBasedBaselineTests(TestCase):
     password = "SmartFoodTest@123"

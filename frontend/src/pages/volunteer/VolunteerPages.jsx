@@ -1540,7 +1540,7 @@ export function ActiveTaskPage() {
     postAction(
       (
         "/logistics/volunteer/tasks/" +
-        `${taskId}/arrive-at-donor/`
+        `${taskId}/arrived-donor/`
       ),
       {},
       "Arrival at the donor was recorded.",
@@ -1551,7 +1551,7 @@ export function ActiveTaskPage() {
     postAction(
       (
         "/logistics/volunteer/tasks/" +
-        `${taskId}/arrive-at-receiver/`
+        `${taskId}/arrived-receiver/`
       ),
       {},
       "Arrival at the receiver was recorded.",

@@ -30,23 +30,14 @@ SENSITIVE_KEYS = {
 
 SENSITIVE_TEXT_PATTERNS = [
     re.compile(
-        r"(?i)"
-        r"(password|password_confirm|new_password|"
-        r"new_password_confirm|old_password|token|"
-        r"access_token|refresh_token|authorization|"
-        r"api[_-]?key|secret)"
-        r"(\s*[=:]\s*)"
-        r"([^\s,;&]+)"
+        r"(?i)(?P<key>\b(?:password|password_confirm|new_password|"
+        r"new_password_confirm|old_password|token|access_token|"
+        r"refresh_token|authorization|api[_-]?key|secret|sf_refresh)\b)"
+        r"(?P<sep>[\"']?\s*[=:]\s*)"
+        r"(?P<value>\"(?:\\.|[^\"])*\"|'(?:\\.|[^'])*'|[^\s,;&}]+)"
     ),
     re.compile(
-        r"(?i)"
-        r"(Bearer\s+)"
-        r"[A-Za-z0-9\-._~+/]+=*"
-    ),
-    re.compile(
-        r"(?i)"
-        r"(sf_refresh=)"
-        r"[^;\s]+"
+        r"(?i)(?P<key>\bBearer\s+)[A-Za-z0-9\-._~+/]+=*"
     ),
 ]
 
@@ -65,23 +56,19 @@ def is_sensitive_key(key):
 
 
 def redact_text(value):
-    text = value
+    # Callbacks avoid invalid backreferences and preserve JSON quoting.
+    def replace_secret(match):
+        quote = '"' if match.group("value").startswith('"') else ""
+        return f"{match.group('key')}{match.group('sep')}{quote}{REDACTED}{quote}"
 
-    for pattern in SENSITIVE_TEXT_PATTERNS:
-        if pattern.pattern.lower().startswith(
-            "(?i)(bearer"
-        ):
-            text = pattern.sub(
-                rf"\1{REDACTED}",
-                text,
-            )
-        else:
-            text = pattern.sub(
-                rf"\1\2{REDACTED}",
-                text,
-            )
-
-    return text
+    text = SENSITIVE_TEXT_PATTERNS[0].sub(
+        replace_secret,
+        value,
+    )
+    return SENSITIVE_TEXT_PATTERNS[1].sub(
+        lambda match: f"{match.group('key')}{REDACTED}",
+        text,
+    )
 
 
 def redact_value(value, key=None):
@@ -132,18 +119,19 @@ class SensitiveDataFilter(logging.Filter):
     def filter(self, record):
         try:
             if isinstance(record.msg, str):
-                record.msg = redact_text(
-                    record.msg
-                )
+                # Format first: password=%s otherwise leaks via record.args.
+                try:
+                    message = record.getMessage()
+                except (TypeError, ValueError):
+                    message = str(record.msg)
+                record.msg = redact_text(message)
+                record.args = ()
             else:
                 record.msg = redact_value(
                     record.msg
                 )
-
-            if record.args:
-                record.args = redact_value(
-                    record.args
-                )
+                if record.args:
+                    record.args = redact_value(record.args)
 
             # Do not replace or modify record.request. Django's
             # request and server log formatters may require the

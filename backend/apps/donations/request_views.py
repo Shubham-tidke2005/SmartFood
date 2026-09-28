@@ -65,6 +65,7 @@ class DonationRequestListView(APIView):
             .select_related(
                 "receiver",
                 "donation",
+                "donation__volunteer_task",
                 "donation__donor",
                 "requested_revision",
                 "requested_revision__category",

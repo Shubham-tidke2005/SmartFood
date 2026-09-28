@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.core.exceptions import ObjectDoesNotExist
 
 from .models import DonationRequest
 
@@ -34,6 +35,15 @@ class DonationRequestCancellationSerializer(
 class DonationRequestReadSerializer(
     serializers.ModelSerializer
 ):
+    volunteer_task_id = serializers.SerializerMethodField()
+
+    def get_volunteer_task_id(self, obj):
+        if obj.proposed_mode != DonationRequest.TransportMode.VOLUNTEER_DELIVERY:
+            return None
+        try:
+            return obj.donation.volunteer_task.id
+        except ObjectDoesNotExist:
+            return None
     receiver_name = serializers.CharField(
         source="receiver.display_name",
         read_only=True,
@@ -81,6 +91,7 @@ class DonationRequestReadSerializer(
 
         fields = [
             "id",
+            "volunteer_task_id",
             "donation",
             "receiver",
             "receiver_name",

@@ -315,7 +315,7 @@ export function ResourceCard({
         <div
           className="mt-5"
           onClick={(event) =>
-            event.preventDefault()
+            event.stopPropagation()
           }
         >
           {actions}

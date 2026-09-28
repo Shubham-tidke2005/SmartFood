@@ -25,7 +25,7 @@ const STATUS_STYLES = {
   OPEN:
     "border-amber-200 bg-amber-50 text-amber-700",
 
-  UNDER_REVIEW:
+  IN_REVIEW:
     "border-blue-200 bg-blue-50 text-blue-700",
 
   RESOLVED:
@@ -467,12 +467,12 @@ export default function AdminComplaintsPage() {
     setSuccess("");
 
     try {
-      await api.post(
-        (
-          `/complaints/${complaint.id}/` +
-          "start-review/"
-        ),
-        {},
+      await api.patch(
+        `/complaints/${complaint.id}/review/`,
+        {
+          status: "IN_REVIEW",
+          audit_reason: "Started review of participant complaint.",
+        },
       );
 
       setSuccess(
@@ -501,13 +501,12 @@ export default function AdminComplaintsPage() {
     setDialogError("");
 
     try {
-      await api.post(
-        (
-          `/complaints/${selectedComplaint.id}/` +
-          "resolve/"
-        ),
+      await api.patch(
+        `/complaints/${selectedComplaint.id}/review/`,
         {
+          status: "RESOLVED",
           resolution,
+          audit_reason: resolution,
         },
       );
 
@@ -694,7 +693,7 @@ export default function AdminComplaintsPage() {
               Open
             </option>
 
-            <option value="UNDER_REVIEW">
+            <option value="IN_REVIEW">
               Under review
             </option>
 
@@ -810,6 +809,10 @@ export default function AdminComplaintsPage() {
                       "
                     />
                   </div>
+
+                  <h2 className="mt-4 text-lg font-bold text-slate-900">
+                    {complaint.subject}
+                  </h2>
 
                   <div
                     className="
@@ -947,7 +950,7 @@ export default function AdminComplaintsPage() {
                   ) : null}
 
                   {complaint.status ===
-                  "UNDER_REVIEW" ? (
+                  "IN_REVIEW" ? (
                     <button
                       type="button"
                       disabled={processing}

@@ -56,7 +56,7 @@ from .volunteer_services import (
 def get_locked_task(task_id):
     return get_object_or_404(
         VolunteerTask.objects
-        .select_for_update()
+        .select_for_update(of=("self",))
         .select_related(
             "donation",
             "donation__donor",

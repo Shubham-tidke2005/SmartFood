@@ -28,7 +28,7 @@ const STATUS_STYLES = {
   OPEN:
     "border-amber-200 bg-amber-50 text-amber-700",
 
-  UNDER_REVIEW:
+  IN_REVIEW:
     "border-blue-200 bg-blue-50 text-blue-700",
 
   RESOLVED:
@@ -232,7 +232,11 @@ function ComplaintCard({
         />
       </div>
 
-      <div className="mt-5 space-y-3">
+      <h2 className="mt-5 text-lg font-bold text-slate-900">
+        {complaint.subject}
+      </h2>
+
+      <div className="mt-3 space-y-3">
         {donationId ? (
           <div className="rounded-xl bg-slate-50 p-4">
             <p
@@ -357,11 +361,7 @@ function ComplaintDialog({
   onSubmit,
 }) {
   const [targetType, setTargetType] =
-    useState(
-      initialDonationId
-        ? "DONATION"
-        : "DONATION",
-    );
+    useState("DONATION");
 
   const [donationId, setDonationId] =
     useState(initialDonationId || "");
@@ -370,6 +370,9 @@ function ComplaintDialog({
     useState("");
 
   const [description, setDescription] =
+    useState("");
+
+  const [subject, setSubject] =
     useState("");
 
   useEffect(() => {
@@ -382,14 +385,16 @@ function ComplaintDialog({
     event.preventDefault();
 
     const payload = {
+      subject: subject.trim(),
       description: description.trim(),
+      complaint_type: targetType,
     };
 
     if (targetType === "DONATION") {
-      payload.donation_id =
+      payload.donation =
         donationId.trim();
     } else {
-      payload.reported_user_id =
+      payload.reported_user =
         reportedUserId.trim();
     }
 
@@ -655,6 +660,21 @@ function ComplaintDialog({
           )}
 
           <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-slate-900">
+              Subject
+            </span>
+            <input
+              type="text"
+              required
+              minLength={5}
+              maxLength={160}
+              value={subject}
+              onChange={(event) => setSubject(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+            />
+          </label>
+
+          <label className="block">
             <span
               className="
                 mb-2 block text-sm font-semibold
@@ -733,46 +753,37 @@ function ComplaintDialog({
             </button>
 
             <button
-              type="submit"
-              disabled={
-                submitting ||
-                description.trim().length < 10 ||
-                (
-                  targetType === "DONATION" &&
-                  !donationId.trim()
-                ) ||
-                (
-                  targetType === "PARTICIPANT" &&
-                  !reportedUserId.trim()
-                )
-              }
-              className="
-                inline-flex items-center
-                justify-center gap-2 rounded-xl
-                bg-red-600 px-5 py-3
-                font-semibold text-white
-                transition hover:bg-red-700
-                active:scale-[0.98]
-                disabled:cursor-not-allowed
-                disabled:opacity-60
-              "
-            >
-              {submitting ? (
-                <>
-                  <LoaderCircle
-                    className="
-                      h-5 w-5 animate-spin
-                    "
-                  />
-                  Submitting...
-                </>
-              ) : (
-                <>
-                  <Send className="h-5 w-5" />
-                  Submit complaint
-                </>
-              )}
-            </button>
+  type="submit"
+  disabled={submitting}
+  className="
+    inline-flex items-center
+    justify-center gap-2 rounded-xl
+    bg-red-600 px-5 py-3
+    font-semibold text-white
+    transition hover:bg-red-700
+    active:scale-[0.98]
+    disabled:cursor-not-allowed
+    disabled:opacity-60
+  "
+>
+  {submitting ? (
+    <>
+      <LoaderCircle
+        className="
+          h-5 w-5 animate-spin
+        "
+      />
+
+      Submitting...
+    </>
+  ) : (
+    <>
+      <Send className="h-5 w-5" />
+
+      Submit complaint
+    </>
+  )}
+</button>
           </div>
         </form>
       </section>
@@ -962,7 +973,7 @@ export default function ComplaintsPage() {
           {[
             "ALL",
             "OPEN",
-            "UNDER_REVIEW",
+            "IN_REVIEW",
             "RESOLVED",
           ].map((status) => (
             <button

@@ -77,14 +77,6 @@ urlpatterns = [
         name="task-accept",
     ),
     path(
-        (
-            "volunteer/tasks/<uuid:task_id>/"
-            "<str:action>/"
-        ),
-        VolunteerTaskStatusView.as_view(),
-        name="task-status",
-    ),
-    path(
         "volunteer/tasks/<uuid:task_id>/pickup/",
         VolunteerPickupView.as_view(),
         name="task-pickup",
@@ -117,5 +109,14 @@ urlpatterns = [
         ),
         VolunteerFailureReportView.as_view(),
         name="task-failure",
+    ),
+    # Keep the catch-all status transition after every named task action.
+    path(
+        (
+            "volunteer/tasks/<uuid:task_id>/"
+            "<str:action>/"
+        ),
+        VolunteerTaskStatusView.as_view(),
+        name="task-status",
     ),
 ]
