@@ -7,7 +7,7 @@ import AuthProvider from "./auth/AuthProvider.jsx";
 
 import "./index.css";
 
-
+//main
 const rootElement =
   document.getElementById("root");
 
